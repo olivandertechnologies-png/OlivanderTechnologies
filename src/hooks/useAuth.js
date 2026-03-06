@@ -3,6 +3,35 @@ import { ensureUserBootstrap } from "../dataLayer.js";
 import { navigate } from "../router.js";
 import { supabase } from "../supabase.js";
 
+async function ensureUserRow(nextUser) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id")
+    .eq("id", nextUser.id)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (data) {
+    return;
+  }
+
+  const { error: upsertError } = await supabase.from("users").upsert(
+    {
+      id: nextUser.id,
+      email: nextUser.email ?? null,
+      name: nextUser.user_metadata?.full_name ?? null,
+    },
+    { onConflict: "id" },
+  );
+
+  if (upsertError) {
+    throw upsertError;
+  }
+}
+
 export function useAuth() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -25,6 +54,7 @@ export function useAuth() {
       }
 
       try {
+        await ensureUserRow(nextUser);
         await ensureUserBootstrap(nextUser);
       } catch (error) {
         console.error("Failed to bootstrap Supabase user", error);
