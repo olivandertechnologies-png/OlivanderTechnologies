@@ -1,0 +1,608 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { requestGeneratedAction } from "./agentState.js";
+import { fetchClients, insertGeneratedAction } from "./dataLayer.js";
+import { useAuth } from "./hooks/useAuth.js";
+import Sidebar from "./Sidebar.jsx";
+
+const palette = {
+  page: "#080c14",
+  surface: "#0e1422",
+  inset: "rgba(255,255,255,0.03)",
+  border: "rgba(255,255,255,0.07)",
+  borderActive: "rgba(79,142,247,0.3)",
+  text: "#ffffff",
+  muted: "rgba(255,255,255,0.45)",
+  faint: "rgba(255,255,255,0.28)",
+  blue: "#4f8ef7",
+  blueSoft: "rgba(79,142,247,0.12)",
+  green: "#34c759",
+  greenSoft: "rgba(52,199,89,0.12)",
+  amber: "#f5a623",
+  amberSoft: "rgba(245,166,35,0.12)",
+  red: "#e05252",
+  redSoft: "rgba(224,82,82,0.12)",
+};
+
+const filterTabs = ["All", "Active", "Needs attention"];
+
+function statusStyles(status) {
+  switch (status) {
+    case "Active":
+      return { color: palette.green, backgroundColor: palette.greenSoft };
+    case "Needs follow-up":
+      return { color: palette.amber, backgroundColor: palette.amberSoft };
+    case "Overdue":
+      return { color: palette.red, backgroundColor: palette.redSoft };
+    case "New lead":
+    default:
+      return { color: palette.blue, backgroundColor: palette.blueSoft };
+  }
+}
+
+function needsAttention(status) {
+  return status === "Needs follow-up" || status === "Overdue" || status === "New lead";
+}
+
+function ClientsShellMessage({ message }) {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: palette.page,
+        color: palette.muted,
+        fontFamily: "'DM Sans', sans-serif",
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
+function Clients() {
+  const { user, loading } = useAuth();
+  const [clients, setClients] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+  const [clientsError, setClientsError] = useState("");
+  const [activeFilter, setActiveFilter] = useState("All");
+  const [expandedId, setExpandedId] = useState(null);
+  const [prompts, setPrompts] = useState({});
+  const [requestStateById, setRequestStateById] = useState({});
+
+  useEffect(() => {
+    const dmSansId = "olivander-font-dm-sans";
+    const monoId = "olivander-font-jetbrains";
+
+    if (!document.getElementById(dmSansId)) {
+      const dmSansLink = document.createElement("link");
+      dmSansLink.id = dmSansId;
+      dmSansLink.rel = "stylesheet";
+      dmSansLink.href =
+        "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap";
+      document.head.appendChild(dmSansLink);
+    }
+
+    if (!document.getElementById(monoId)) {
+      const monoLink = document.createElement("link");
+      monoLink.id = monoId;
+      monoLink.rel = "stylesheet";
+      monoLink.href =
+        "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap";
+      document.head.appendChild(monoLink);
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadClients = async () => {
+      if (!user) {
+        return;
+      }
+
+      setClientsLoading(true);
+      setClientsError("");
+
+      try {
+        const nextClients = await fetchClients(user.id);
+        if (isMounted) {
+          setClients(nextClients);
+        }
+      } catch (error) {
+        console.error("Failed to fetch clients", error);
+        if (isMounted) {
+          setClientsError("Something went wrong. Try refreshing.");
+          setClients([]);
+        }
+      } finally {
+        if (isMounted) {
+          setClientsLoading(false);
+        }
+      }
+    };
+
+    void loadClients();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
+  const visibleClients = useMemo(() => {
+    if (activeFilter === "Active") {
+      return clients.filter((client) => client.status === "Active");
+    }
+
+    if (activeFilter === "Needs attention") {
+      return clients.filter((client) => needsAttention(client.status));
+    }
+
+    return clients;
+  }, [activeFilter, clients]);
+
+  const toggleExpanded = (clientId) => {
+    setExpandedId((current) => (current === clientId ? null : clientId));
+  };
+
+  const setPrompt = (clientId, value) => {
+    setPrompts((current) => ({ ...current, [clientId]: value }));
+  };
+
+  const setRequestState = (clientId, next) => {
+    setRequestStateById((current) => ({ ...current, [clientId]: next }));
+  };
+
+  const handleGenerateAction = async (event, client) => {
+    event.preventDefault();
+    const prompt = (prompts[client.id] || "").trim();
+
+    if (!prompt || requestStateById[client.id]?.status === "loading" || !user) {
+      return;
+    }
+
+    setRequestState(client.id, { status: "loading" });
+
+    const clientContext = [
+      `Client name: ${client.name}`,
+      `Descriptor: ${client.descriptor}`,
+      `Status: ${client.status}`,
+      `Last contact: ${client.lastContact}`,
+      `Agent notes: ${client.notes.join(" ")}`,
+      `User request: ${prompt}`,
+    ].join("\n");
+
+    try {
+      const generated = await requestGeneratedAction(clientContext);
+      await insertGeneratedAction(user.id, generated);
+      setPrompt(client.id, "");
+      setRequestState(client.id, { status: "success" });
+      window.setTimeout(() => {
+        setRequestState(client.id, { status: "idle" });
+      }, 2200);
+    } catch (error) {
+      console.error("Failed to generate client action", error);
+      const message =
+        error?.code === "missing-api-key"
+          ? "The agent couldn't generate an action. Add your Groq API key in .env and restart the app."
+          : "Something went wrong. Try refreshing.";
+      setRequestState(client.id, { status: "error", message });
+    }
+  };
+
+  if (loading) {
+    return <ClientsShellMessage message="Checking your session..." />;
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        width: "100%",
+        backgroundColor: palette.page,
+        color: palette.text,
+        fontFamily: "'DM Sans', sans-serif",
+      }}
+    >
+      <Sidebar user={user} />
+
+      <main
+        style={{
+          marginLeft: "220px",
+          padding: "48px 40px",
+          boxSizing: "border-box",
+          width: "calc(100% - 220px)",
+        }}
+      >
+        <h1
+          style={{
+            margin: "0 0 10px",
+            color: palette.text,
+            fontSize: "38px",
+            lineHeight: 1.05,
+            fontWeight: 700,
+            letterSpacing: "-0.05em",
+          }}
+        >
+          Clients
+        </h1>
+        <p
+          style={{
+            margin: "0 0 28px",
+            color: palette.muted,
+            fontSize: "15px",
+            lineHeight: 1.7,
+          }}
+        >
+          Everyone your agent knows about.
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "32px",
+            marginBottom: "28px",
+          }}
+        >
+          {filterTabs.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveFilter(tab)}
+              style={{
+                border: "none",
+                borderBottom:
+                  activeFilter === tab
+                    ? `2px solid ${palette.blue}`
+                    : "2px solid transparent",
+                backgroundColor: "transparent",
+                color: activeFilter === tab ? palette.text : palette.muted,
+                padding: "0 0 10px",
+                fontSize: "15px",
+                fontWeight: 500,
+                fontFamily: "'DM Sans', sans-serif",
+                cursor: "pointer",
+              }}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {clientsError ? (
+          <div
+            style={{
+              marginBottom: "18px",
+              color: palette.muted,
+              fontSize: "13px",
+              lineHeight: 1.6,
+            }}
+          >
+            {clientsError}
+          </div>
+        ) : null}
+
+        {clientsLoading ? (
+          <div
+            style={{
+              color: palette.muted,
+              fontSize: "14px",
+            }}
+          >
+            Loading clients...
+          </div>
+        ) : visibleClients.length ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {visibleClients.map((client) => {
+              const expanded = expandedId === client.id;
+              const statusStyle = statusStyles(client.status);
+              const requestState = requestStateById[client.id] || { status: "idle" };
+
+              return (
+                <article
+                  key={client.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={expanded}
+                  onClick={() => toggleExpanded(client.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      toggleExpanded(client.id);
+                    }
+                  }}
+                  style={{
+                    backgroundColor: palette.surface,
+                    border: `1px solid ${expanded ? palette.borderActive : palette.border}`,
+                    borderLeft: `3px solid ${expanded ? palette.blue : "transparent"}`,
+                    borderRadius: "12px",
+                    padding: "20px 24px",
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                    transition:
+                      "border-color 220ms ease, border-left-color 220ms ease, box-shadow 220ms ease",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: "16px",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          marginBottom: "6px",
+                          color: palette.text,
+                          fontSize: "22px",
+                          fontWeight: 700,
+                          letterSpacing: "-0.03em",
+                        }}
+                      >
+                        {client.name}
+                      </div>
+                      <div
+                        style={{
+                          marginBottom: "8px",
+                          color: palette.muted,
+                          fontSize: "14px",
+                        }}
+                      >
+                        {client.descriptor}
+                      </div>
+                      <div
+                        style={{
+                          color: palette.faint,
+                          fontSize: "12px",
+                        }}
+                      >
+                        Last contact: {client.lastContact}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        ...statusStyle,
+                        padding: "3px 10px",
+                        borderRadius: "20px",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {client.status}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      maxHeight: expanded ? "400px" : "0",
+                      overflow: "hidden",
+                      transition: "max-height 400ms cubic-bezier(0.4, 0, 0.2, 1)",
+                    }}
+                  >
+                    <div
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      style={{
+                        marginTop: "20px",
+                        paddingTop: "20px",
+                        borderTop: `1px solid ${palette.border}`,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                          gap: "20px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: "18px",
+                            borderRadius: "10px",
+                            backgroundColor: palette.inset,
+                          }}
+                        >
+                          <div
+                            style={{
+                              marginBottom: "12px",
+                              color: palette.muted,
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Agent notes
+                          </div>
+
+                          <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
+                            {client.notes.map((note) => (
+                              <div
+                                key={note}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "flex-start",
+                                  gap: "10px",
+                                  color: palette.muted,
+                                  fontSize: "13px",
+                                  lineHeight: 1.65,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    width: "5px",
+                                    height: "5px",
+                                    marginTop: "8px",
+                                    borderRadius: "999px",
+                                    backgroundColor: palette.blue,
+                                    flexShrink: 0,
+                                  }}
+                                />
+                                <span>{note}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            padding: "18px",
+                            borderRadius: "10px",
+                            backgroundColor: palette.inset,
+                          }}
+                        >
+                          <div
+                            style={{
+                              marginBottom: "12px",
+                              color: palette.muted,
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Recent interactions
+                          </div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "9px",
+                              color: palette.muted,
+                              fontSize: "13px",
+                              lineHeight: 1.65,
+                            }}
+                          >
+                            {client.recentActions.map((item) => (
+                              <div key={item}>{item}</div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: "18px" }}>
+                        <form
+                          onSubmit={(event) => handleGenerateAction(event, client)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px",
+                            padding: "10px",
+                            borderRadius: "12px",
+                            backgroundColor: palette.surface,
+                            border: `1px solid ${palette.border}`,
+                            boxShadow:
+                              requestState.status === "loading"
+                                ? `0 0 0 2px rgba(79,142,247,0.18)`
+                                : "none",
+                          }}
+                        >
+                          <div
+                            style={{
+                              color: palette.blue,
+                              fontSize: "16px",
+                              lineHeight: 1,
+                              paddingLeft: "2px",
+                            }}
+                          >
+                            ✦
+                          </div>
+
+                          <input
+                            value={prompts[client.id] || ""}
+                            onChange={(event) => setPrompt(client.id, event.target.value)}
+                            placeholder={`Generate action for ${client.name}`}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              border: "none",
+                              backgroundColor: "transparent",
+                              color: palette.text,
+                              padding: "8px 0",
+                              fontSize: "14px",
+                              fontFamily: "'DM Sans', sans-serif",
+                              outline: "none",
+                            }}
+                          />
+
+                          <button
+                            type="submit"
+                            disabled={requestState.status === "loading"}
+                            style={{
+                              border: `1px solid ${palette.blue}`,
+                              backgroundColor: palette.blue,
+                              color: "#080c14",
+                              padding: "10px 14px",
+                              borderRadius: "8px",
+                              fontSize: "13px",
+                              fontWeight: 700,
+                              fontFamily: "'DM Sans', sans-serif",
+                              cursor:
+                                requestState.status === "loading" ? "default" : "pointer",
+                              whiteSpace: "nowrap",
+                              opacity: requestState.status === "loading" ? 0.8 : 1,
+                            }}
+                          >
+                            {requestState.status === "loading" ? "Generating…" : "Generate"}
+                          </button>
+                        </form>
+
+                        {requestState.status === "success" ? (
+                          <div
+                            style={{
+                              marginTop: "10px",
+                              color: palette.green,
+                              fontSize: "13px",
+                            }}
+                          >
+                            Added to your approval feed.
+                          </div>
+                        ) : null}
+
+                        {requestState.status === "error" ? (
+                          <div
+                            style={{
+                              marginTop: "10px",
+                              color: palette.muted,
+                              fontSize: "13px",
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            {requestState.message}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div
+            style={{
+              color: palette.muted,
+              fontSize: "14px",
+              lineHeight: 1.6,
+            }}
+          >
+            No clients yet. Olivander will add them as it learns your inbox.
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+export default Clients;

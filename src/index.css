@@ -1,0 +1,16 @@
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 1280px;
+  background: #0f1117;
+}
+
+* {
+  box-sizing: border-box;
+}
