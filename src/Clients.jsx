@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { requestGeneratedAction } from "./agentState.js";
-import { fetchClients, insertGeneratedAction } from "./dataLayer.js";
+import { useEffect, useMemo, useState } from "react";
+import { fetchClients, generateAction } from "./dataLayer.js";
+import { loadDocumentAssets } from "./documentAssets.js";
 import { useAuth } from "./hooks/useAuth.js";
+import { ACTION_PROMPT_MAX_LENGTH, sanitizePromptInput } from "./security.js";
 import Sidebar from "./Sidebar.jsx";
 
 const palette = {
@@ -72,26 +73,9 @@ function Clients() {
   const [requestStateById, setRequestStateById] = useState({});
 
   useEffect(() => {
-    const dmSansId = "olivander-font-dm-sans";
-    const monoId = "olivander-font-jetbrains";
-
-    if (!document.getElementById(dmSansId)) {
-      const dmSansLink = document.createElement("link");
-      dmSansLink.id = dmSansId;
-      dmSansLink.rel = "stylesheet";
-      dmSansLink.href =
-        "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap";
-      document.head.appendChild(dmSansLink);
-    }
-
-    if (!document.getElementById(monoId)) {
-      const monoLink = document.createElement("link");
-      monoLink.id = monoId;
-      monoLink.rel = "stylesheet";
-      monoLink.href =
-        "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap";
-      document.head.appendChild(monoLink);
-    }
+    loadDocumentAssets({
+      fonts: ["dmSans", "jetbrainsMono"],
+    });
   }, []);
 
   useEffect(() => {
@@ -174,8 +158,10 @@ function Clients() {
     ].join("\n");
 
     try {
-      const generated = await requestGeneratedAction(clientContext);
-      await insertGeneratedAction(user.id, generated);
+      await generateAction(clientContext, {
+        client_name: client.name,
+        client_status: client.status,
+      });
       setPrompt(client.id, "");
       setRequestState(client.id, { status: "success" });
       window.setTimeout(() => {
@@ -184,9 +170,9 @@ function Clients() {
     } catch (error) {
       console.error("Failed to generate client action", error);
       const message =
-        error?.code === "missing-api-key"
-          ? "The agent couldn't generate an action. Add your Groq API key in .env and restart the app."
-          : "Something went wrong. Try refreshing.";
+        error?.code === "missing-api-url"
+          ? "The agent couldn't generate an action. Add VITE_API_URL to .env and restart the app."
+          : error?.message || "Something went wrong. Try refreshing.";
       setRequestState(client.id, { status: "error", message });
     }
   };
@@ -521,7 +507,10 @@ function Clients() {
 
                           <input
                             value={prompts[client.id] || ""}
-                            onChange={(event) => setPrompt(client.id, event.target.value)}
+                            onChange={(event) =>
+                              setPrompt(client.id, sanitizePromptInput(event.target.value))
+                            }
+                            maxLength={ACTION_PROMPT_MAX_LENGTH}
                             placeholder={`Generate action for ${client.name}`}
                             style={{
                               flex: 1,

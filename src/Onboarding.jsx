@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { loadDocumentAssets } from "./documentAssets.js";
+import { PROFILE_FIELD_LIMITS, sanitizeProfileFieldInput } from "./security.js";
 
 const TOTAL_STEPS = 4;
 const SCAN_LINES = [
@@ -62,32 +64,12 @@ function Onboarding() {
   const [showDashboardLink, setShowDashboardLink] = useState(false);
 
   useEffect(() => {
-    const soraId = "olivander-font-sora";
-    const monoId = "olivander-font-jetbrains";
-    const motionId = "olivander-onboarding-motion";
-
-    if (!document.getElementById(soraId)) {
-      const soraLink = document.createElement("link");
-      soraLink.id = soraId;
-      soraLink.rel = "stylesheet";
-      soraLink.href =
-        "https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap";
-      document.head.appendChild(soraLink);
-    }
-
-    if (!document.getElementById(monoId)) {
-      const monoLink = document.createElement("link");
-      monoLink.id = monoId;
-      monoLink.rel = "stylesheet";
-      monoLink.href =
-        "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap";
-      document.head.appendChild(monoLink);
-    }
-
-    if (!document.getElementById(motionId)) {
-      const style = document.createElement("style");
-      style.id = motionId;
-      style.textContent = `
+    loadDocumentAssets({
+      fonts: ["sora", "jetbrainsMono"],
+      styles: [
+        {
+          id: "olivander-onboarding-motion",
+          css: `
         @keyframes olivander-spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
@@ -96,9 +78,10 @@ function Onboarding() {
           0%, 49% { opacity: 1; }
           50%, 100% { opacity: 0; }
         }
-      `;
-      document.head.appendChild(style);
-    }
+      `,
+        },
+      ],
+    });
   }, []);
 
   useEffect(() => {
@@ -164,7 +147,10 @@ function Onboarding() {
   };
 
   const handleProfileChange = (field, value) => {
-    setProfile((current) => ({ ...current, [field]: value }));
+    setProfile((current) => ({
+      ...current,
+      [field]: sanitizeProfileFieldInput(field, value),
+    }));
   };
 
   const handleProfileContinue = () => {
@@ -335,6 +321,7 @@ function Onboarding() {
                     onChange={(event) =>
                       handleProfileChange("name", event.target.value)
                     }
+                    maxLength={PROFILE_FIELD_LIMITS.name}
                     placeholder="e.g. James McKenzie"
                     style={inputStyle}
                   />
@@ -349,6 +336,7 @@ function Onboarding() {
                     onChange={(event) =>
                       handleProfileChange("role", event.target.value)
                     }
+                    maxLength={PROFILE_FIELD_LIMITS.role}
                     placeholder="e.g. Plumber, personal trainer, consultant"
                     style={inputStyle}
                   />
@@ -363,6 +351,7 @@ function Onboarding() {
                     onChange={(event) =>
                       handleProfileChange("signoff", event.target.value)
                     }
+                    maxLength={PROFILE_FIELD_LIMITS.signoff}
                     placeholder="e.g. Cheers, James"
                     style={inputStyle}
                   />

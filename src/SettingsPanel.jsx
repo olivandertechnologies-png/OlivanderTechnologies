@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { PROFILE_FIELD_LIMITS } from "./security.js";
 
 const palette = {
   overlay: "rgba(0,0,0,0.5)",
@@ -226,6 +227,7 @@ function SettingsPanel({
                   onChange={(event) =>
                     onFieldChange("profile", "name", event.target.value)
                   }
+                  maxLength={PROFILE_FIELD_LIMITS.name}
                   style={fieldStyle}
                   disabled={isDisabled}
                 />
@@ -237,6 +239,7 @@ function SettingsPanel({
                   onChange={(event) =>
                     onFieldChange("profile", "businessName", event.target.value)
                   }
+                  maxLength={PROFILE_FIELD_LIMITS.businessName}
                   style={fieldStyle}
                   disabled={isDisabled}
                 />
@@ -248,6 +251,7 @@ function SettingsPanel({
                   onChange={(event) =>
                     onFieldChange("profile", "work", event.target.value)
                   }
+                  maxLength={PROFILE_FIELD_LIMITS.work}
                   style={fieldStyle}
                   disabled={isDisabled}
                 />
@@ -259,6 +263,7 @@ function SettingsPanel({
                   onChange={(event) =>
                     onFieldChange("profile", "signoff", event.target.value)
                   }
+                  maxLength={PROFILE_FIELD_LIMITS.signoff}
                   style={fieldStyle}
                   disabled={isDisabled}
                 />
@@ -270,6 +275,7 @@ function SettingsPanel({
                   onChange={(event) =>
                     onFieldChange("profile", "turnaround", event.target.value)
                   }
+                  maxLength={PROFILE_FIELD_LIMITS.turnaround}
                   style={fieldStyle}
                   disabled={isDisabled}
                 />

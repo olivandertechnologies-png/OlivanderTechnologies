@@ -7,8 +7,10 @@ body,
 }
 
 body {
-  min-width: 1280px;
+  min-height: 100vh;
+  min-width: 320px;
   background: #0f1117;
+  color: #ffffff;
 }
 
 * {

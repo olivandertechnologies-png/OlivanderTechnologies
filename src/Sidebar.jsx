@@ -1,6 +1,13 @@
-import React, { useEffect, useState } from "react";
-import { fetchUserProfile, getInitials, saveUserProfile } from "./dataLayer.js";
+import { useEffect, useState } from "react";
+import {
+  DEFAULT_PROFILE,
+  fetchUserProfile,
+  getInitials,
+  saveUserProfile,
+} from "./dataLayer.js";
+import { loadDocumentAssets } from "./documentAssets.js";
 import { navigate, usePathname } from "./router.js";
+import { sanitizeSettingsFieldValue } from "./security.js";
 import SettingsPanel from "./SettingsPanel.jsx";
 import { supabase } from "./supabase.js";
 
@@ -9,24 +16,6 @@ const palette = {
   border: "rgba(255,255,255,0.06)",
   text: "#ffffff",
   muted: "rgba(255,255,255,0.45)",
-};
-
-const EMPTY_SETTINGS = {
-  profile: {
-    name: "",
-    businessName: "",
-    work: "",
-    signoff: "",
-    turnaround: "",
-  },
-  behaviour: {
-    tone: "Professional",
-    followUpDelay: "After 3 days",
-    autoDismissLowPriority: false,
-  },
-  integrations: {
-    calendarConnected: false,
-  },
 };
 
 function navLinkStyle(active) {
@@ -49,7 +38,7 @@ function Sidebar({ user }) {
   const pathname = usePathname();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [hoveredLink, setHoveredLink] = useState(null);
-  const [settings, setSettings] = useState(EMPTY_SETTINGS);
+  const [settings, setSettings] = useState(DEFAULT_PROFILE);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
@@ -58,16 +47,9 @@ function Sidebar({ user }) {
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
-    const dmSansId = "olivander-font-dm-sans";
-
-    if (!document.getElementById(dmSansId)) {
-      const dmSansLink = document.createElement("link");
-      dmSansLink.id = dmSansId;
-      dmSansLink.rel = "stylesheet";
-      dmSansLink.href =
-        "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap";
-      document.head.appendChild(dmSansLink);
-    }
+    loadDocumentAssets({
+      fonts: ["dmSans"],
+    });
   }, []);
 
   useEffect(() => {
@@ -132,7 +114,7 @@ function Sidebar({ user }) {
       ...current,
       [section]: {
         ...current[section],
-        [field]: value,
+        [field]: sanitizeSettingsFieldValue(section, field, value),
       },
     }));
   };
@@ -154,7 +136,7 @@ function Sidebar({ user }) {
       }, 2000);
     } catch (error) {
       console.error("Failed to save user profile", error);
-      setProfileError("Something went wrong. Try refreshing.");
+      setProfileError(error?.message || "Something went wrong. Try refreshing.");
       setIsSaved(false);
     } finally {
       setIsSaving(false);

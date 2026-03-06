@@ -1,12 +1,15 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   buildAgentContext,
   fetchDoneTodayActions,
   fetchPendingActions,
   fetchUserProfile,
+  generateAction,
   updateActionStatus,
 } from "./dataLayer.js";
+import { loadDocumentAssets } from "./documentAssets.js";
 import { useAuth } from "./hooks/useAuth.js";
+import { ACTION_PROMPT_MAX_LENGTH, sanitizePromptInput } from "./security.js";
 import Sidebar from "./Sidebar.jsx";
 
 const palette = {
@@ -74,32 +77,12 @@ function App() {
   const [contextError, setContextError] = useState("");
 
   useEffect(() => {
-    const dmSansId = "olivander-font-dm-sans";
-    const monoId = "olivander-font-jetbrains";
-    const motionId = "olivander-dashboard-motion";
-
-    if (!document.getElementById(dmSansId)) {
-      const dmSansLink = document.createElement("link");
-      dmSansLink.id = dmSansId;
-      dmSansLink.rel = "stylesheet";
-      dmSansLink.href =
-        "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap";
-      document.head.appendChild(dmSansLink);
-    }
-
-    if (!document.getElementById(monoId)) {
-      const monoLink = document.createElement("link");
-      monoLink.id = monoId;
-      monoLink.rel = "stylesheet";
-      monoLink.href =
-        "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap";
-      document.head.appendChild(monoLink);
-    }
-
-    if (!document.getElementById(motionId)) {
-      const style = document.createElement("style");
-      style.id = motionId;
-      style.textContent = `
+    loadDocumentAssets({
+      fonts: ["dmSans", "jetbrainsMono"],
+      styles: [
+        {
+          id: "olivander-dashboard-motion",
+          css: `
         @keyframes olivander-shimmer {
           0% { opacity: 0.4; }
           50% { opacity: 0.8; }
@@ -109,9 +92,10 @@ function App() {
           0% { opacity: 0; transform: translateY(-8px); }
           100% { opacity: 1; transform: translateY(0); }
         }
-      `;
-      document.head.appendChild(style);
-    }
+      `,
+        },
+      ],
+    });
   }, []);
 
   useEffect(() => {
@@ -204,7 +188,7 @@ function App() {
       }, 300);
     } catch (error) {
       console.error("Failed to approve action", error);
-      setFeedError("Something went wrong. Try refreshing.");
+      setFeedError(error?.message || "Something went wrong. Try refreshing.");
       setActions((current) =>
         current.map((action) =>
           action.id === actionToApprove.id ? { ...action, phase: "idle" } : action,
@@ -231,7 +215,7 @@ function App() {
       }, 250);
     } catch (error) {
       console.error("Failed to dismiss action", error);
-      setFeedError("Something went wrong. Try refreshing.");
+      setFeedError(error?.message || "Something went wrong. Try refreshing.");
       setActions((current) =>
         current.map((action) =>
           action.id === actionToDismiss.id ? { ...action, phase: "idle" } : action,
@@ -254,57 +238,20 @@ function App() {
     setFeedError("");
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/actions/generate`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            user_id: user.id,
-            situation: prompt,
-            user_context: {
-              name: profileSettings?.profile?.name || "",
-              business_name: profileSettings?.profile?.businessName || "",
-              what_you_do: profileSettings?.profile?.work || "",
-              email_signoff: profileSettings?.profile?.signoff || "",
-            },
-          }),
-        },
-      );
+      const createdAction = await generateAction(prompt, {
+        name: profileSettings?.profile?.name || "",
+        business_name: profileSettings?.profile?.businessName || "",
+        what_you_do: profileSettings?.profile?.work || "",
+        email_signoff: profileSettings?.profile?.signoff || "",
+      });
 
-      if (!response.ok) {
-        throw new Error(`Backend generation failed with ${response.status}`);
-      }
-
-      const createdAction = await response.json();
-      const insertedAction = {
-        id: createdAction.id,
-        reasoning: createdAction.reasoning || "",
-        title: createdAction.action_label || createdAction.title || "",
-        draft: createdAction.draft || "",
-        status: createdAction.status || "pending",
-        createdAt: createdAction.created_at || null,
-        time: createdAction.created_at
-          ? new Date(createdAction.created_at).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : new Date().toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-        phase: "idle",
-      };
-
-      setActions((current) => [insertedAction, ...current]);
+      setActions((current) => [createdAction, ...current]);
       setGeneratorCard(null);
     } catch (error) {
       console.error("Failed to generate action", error);
       setGeneratorCard({
         status: "error",
-        message: "The agent couldn't generate an action. Try rephrasing.",
+        message: error?.message || "The agent couldn't generate an action. Try rephrasing.",
       });
     } finally {
       setIsGenerating(false);
@@ -663,9 +610,12 @@ function App() {
               </div>
               <input
                 value={generatorPrompt}
-                onChange={(event) => setGeneratorPrompt(event.target.value)}
+                onChange={(event) =>
+                  setGeneratorPrompt(sanitizePromptInput(event.target.value))
+                }
                 onFocus={() => setIsBarFocused(true)}
                 onBlur={() => setIsBarFocused(false)}
+                maxLength={ACTION_PROMPT_MAX_LENGTH}
                 placeholder="What needs to happen?"
                 style={{
                   flex: 1,

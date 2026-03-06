@@ -1,6 +1,19 @@
 import { supabase } from "./supabase.js";
+import {
+  DEFAULT_PROFILE,
+  getSessionAccessToken,
+  sanitizeActionStatus,
+  sanitizeApiBaseUrl,
+  sanitizePromptInput,
+  sanitizeSettingsInput,
+  sanitizeUserContext,
+  sanitizeUuid,
+} from "./security.js";
+
+export { DEFAULT_PROFILE } from "./security.js";
 
 const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
 const SEEDED_CLIENTS = [
   {
@@ -85,24 +98,6 @@ const SEEDED_CLIENTS = [
   },
 ];
 
-const DEFAULT_PROFILE = {
-  profile: {
-    name: "",
-    businessName: "",
-    work: "",
-    signoff: "",
-    turnaround: "",
-  },
-  behaviour: {
-    tone: "Professional",
-    followUpDelay: "After 3 days",
-    autoDismissLowPriority: false,
-  },
-  integrations: {
-    calendarConnected: false,
-  },
-};
-
 const bootstrappedUsers = new Set();
 const bootstrapPromises = new Map();
 
@@ -110,33 +105,45 @@ function ensureArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function getApiBaseUrl() {
+  try {
+    return sanitizeApiBaseUrl(API_BASE_URL);
+  } catch (error) {
+    error.code = "missing-api-url";
+    throw error;
+  }
+}
+
 function getFullName(user) {
-  return (
+  const rawName =
     user?.user_metadata?.full_name ||
     user?.user_metadata?.name ||
     user?.email ||
-    ""
-  );
+    "";
+
+  return typeof rawName === "string" ? rawName.trim().slice(0, 80) : "";
 }
 
 function buildUserPayload(user, settings = DEFAULT_PROFILE) {
+  const sanitizedSettings = sanitizeSettingsInput(settings);
+
   return {
-    id: user.id,
+    id: sanitizeUuid(user.id, "User ID"),
     email: user.email ?? null,
-    name: settings.profile.name || getFullName(user) || null,
-    business_name: settings.profile.businessName || null,
-    work: settings.profile.work || null,
-    signoff: settings.profile.signoff || null,
-    turnaround: settings.profile.turnaround || null,
-    tone: settings.behaviour.tone || null,
-    follow_up_delay: settings.behaviour.followUpDelay || null,
+    name: sanitizedSettings.profile.name || getFullName(user) || null,
+    business_name: sanitizedSettings.profile.businessName || null,
+    work: sanitizedSettings.profile.work || null,
+    signoff: sanitizedSettings.profile.signoff || null,
+    turnaround: sanitizedSettings.profile.turnaround || null,
+    tone: sanitizedSettings.behaviour.tone || null,
+    follow_up_delay: sanitizedSettings.behaviour.followUpDelay || null,
     auto_dismiss_low_priority:
-      typeof settings.behaviour.autoDismissLowPriority === "boolean"
-        ? settings.behaviour.autoDismissLowPriority
+      typeof sanitizedSettings.behaviour.autoDismissLowPriority === "boolean"
+        ? sanitizedSettings.behaviour.autoDismissLowPriority
         : null,
     calendar_connected:
-      typeof settings.integrations.calendarConnected === "boolean"
-        ? settings.integrations.calendarConnected
+      typeof sanitizedSettings.integrations.calendarConnected === "boolean"
+        ? sanitizedSettings.integrations.calendarConnected
         : null,
   };
 }
@@ -189,7 +196,7 @@ function mapActionRow(row) {
   return {
     id: row.id,
     reasoning: row.reasoning || "",
-    title: row.title || "",
+    title: row.action_label || row.title || row.action || "",
     draft: row.draft || "",
     status: row.status || "pending",
     createdAt: row.created_at || null,
@@ -211,12 +218,14 @@ function mapClientRow(row) {
 }
 
 export async function ensureUserBootstrap(user) {
-  if (!user?.id || bootstrappedUsers.has(user.id)) {
+  const userId = user?.id ? sanitizeUuid(user.id, "User ID") : null;
+
+  if (!userId || bootstrappedUsers.has(userId)) {
     return;
   }
 
-  if (bootstrapPromises.has(user.id)) {
-    await bootstrapPromises.get(user.id);
+  if (bootstrapPromises.has(userId)) {
+    await bootstrapPromises.get(userId);
     return;
   }
 
@@ -224,7 +233,7 @@ export async function ensureUserBootstrap(user) {
     const { data: existingUser, error: userLookupError } = await supabase
       .from("users")
       .select("*")
-      .eq("id", user.id)
+      .eq("id", userId)
       .maybeSingle();
 
     if (userLookupError) {
@@ -235,7 +244,7 @@ export async function ensureUserBootstrap(user) {
       const { error: insertUserError } = await supabase
         .from("users")
         .insert({
-          id: user.id,
+          id: userId,
           email: user.email ?? null,
           name: getFullName(user) || null,
           business_name: null,
@@ -256,7 +265,7 @@ export async function ensureUserBootstrap(user) {
     const { count, error: clientsCountError } = await supabase
       .from("clients")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id);
+      .eq("user_id", userId);
 
     if (clientsCountError) {
       throw clientsCountError;
@@ -264,7 +273,7 @@ export async function ensureUserBootstrap(user) {
 
     if (!count) {
       const seededRows = SEEDED_CLIENTS.map((client) => ({
-        user_id: user.id,
+        user_id: userId,
         ...client,
       }));
 
@@ -277,23 +286,24 @@ export async function ensureUserBootstrap(user) {
       }
     }
 
-    bootstrappedUsers.add(user.id);
+    bootstrappedUsers.add(userId);
   })();
 
-  bootstrapPromises.set(user.id, bootstrapPromise);
+  bootstrapPromises.set(userId, bootstrapPromise);
 
   try {
     await bootstrapPromise;
   } finally {
-    bootstrapPromises.delete(user.id);
+    bootstrapPromises.delete(userId);
   }
 }
 
 export async function fetchUserProfile(user) {
+  const userId = sanitizeUuid(user.id, "User ID");
   const { data, error } = await supabase
     .from("users")
     .select("*")
-    .eq("id", user.id)
+    .eq("id", userId)
     .maybeSingle();
 
   if (error) {
@@ -304,7 +314,7 @@ export async function fetchUserProfile(user) {
 }
 
 export async function saveUserProfile(user, settings) {
-  const payload = buildUserPayload(user, settings);
+  const payload = buildUserPayload(user, sanitizeSettingsInput(settings));
 
   const { data, error } = await supabase
     .from("users")
@@ -320,10 +330,11 @@ export async function saveUserProfile(user, settings) {
 }
 
 export async function fetchPendingActions(userId) {
+  const sanitizedUserId = sanitizeUuid(userId, "User ID");
   const { data, error } = await supabase
     .from("actions")
     .select("*")
-    .eq("user_id", userId)
+    .eq("user_id", sanitizedUserId)
     .eq("status", "pending")
     .order("created_at", { ascending: false });
 
@@ -335,12 +346,13 @@ export async function fetchPendingActions(userId) {
 }
 
 export async function fetchDoneTodayActions(userId) {
+  const sanitizedUserId = sanitizeUuid(userId, "User ID");
   const since = new Date(Date.now() - ONE_DAY_IN_MS).toISOString();
 
   const { data, error } = await supabase
     .from("actions")
     .select("*")
-    .eq("user_id", userId)
+    .eq("user_id", sanitizedUserId)
     .eq("status", "approved")
     .gte("created_at", since)
     .order("created_at", { ascending: false });
@@ -353,45 +365,63 @@ export async function fetchDoneTodayActions(userId) {
 }
 
 export async function updateActionStatus(actionId, status) {
-  const { data, error } = await supabase
-    .from("actions")
-    .update({ status })
-    .eq("id", actionId)
-    .select("*")
-    .single();
+  const sanitizedActionId = sanitizeUuid(actionId, "Action ID");
+  const sanitizedStatus = sanitizeActionStatus(status);
+  const accessToken = await getSessionAccessToken();
+  const apiBaseUrl = getApiBaseUrl();
+  const response = await fetch(
+    `${apiBaseUrl}/actions/${sanitizedActionId}/${sanitizedStatus}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
 
-  if (error) {
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = new Error(payload?.detail || `Request failed with ${response.status}`);
+    error.status = response.status;
+    error.retryAfterSeconds = payload?.retry_after_seconds ?? null;
     throw error;
   }
 
-  return mapActionRow(data);
+  return mapActionRow(payload);
 }
 
-export async function insertGeneratedAction(userId, generated) {
-  const { data, error } = await supabase
-    .from("actions")
-    .insert({
-      user_id: userId,
-      status: "pending",
-      reasoning: generated.reasoning,
-      title: generated.title,
-      draft: generated.draft,
-    })
-    .select("*")
-    .single();
+export async function generateAction(situation, userContext = {}) {
+  const accessToken = await getSessionAccessToken();
+  const apiBaseUrl = getApiBaseUrl();
+  const response = await fetch(`${apiBaseUrl}/actions/generate`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      situation: sanitizePromptInput(situation),
+      user_context: sanitizeUserContext(userContext),
+    }),
+  });
 
-  if (error) {
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = new Error(payload?.detail || `Request failed with ${response.status}`);
+    error.status = response.status;
+    error.retryAfterSeconds = payload?.retry_after_seconds ?? null;
     throw error;
   }
 
-  return mapActionRow(data);
+  return mapActionRow(payload);
 }
 
 export async function fetchClients(userId) {
+  const sanitizedUserId = sanitizeUuid(userId, "User ID");
   const { data, error } = await supabase
     .from("clients")
     .select("*")
-    .eq("user_id", userId)
+    .eq("user_id", sanitizedUserId)
     .order("created_at", { ascending: false });
 
   if (error) {

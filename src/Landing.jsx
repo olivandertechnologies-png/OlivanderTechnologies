@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { loadDocumentAssets } from "./documentAssets.js";
 import { navigate } from "./router.js";
 import { supabase } from "./supabase.js";
 
@@ -118,32 +119,12 @@ function Landing() {
   const demoScrollRef = useRef(null);
 
   useEffect(() => {
-    const dmSansId = "olivander-font-dm-sans";
-    const monoId = "olivander-font-jetbrains";
-    const styleId = "olivander-landing-effects";
-
-    if (!document.getElementById(dmSansId)) {
-      const dmSansLink = document.createElement("link");
-      dmSansLink.id = dmSansId;
-      dmSansLink.rel = "stylesheet";
-      dmSansLink.href =
-        "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap";
-      document.head.appendChild(dmSansLink);
-    }
-
-    if (!document.getElementById(monoId)) {
-      const monoLink = document.createElement("link");
-      monoLink.id = monoId;
-      monoLink.rel = "stylesheet";
-      monoLink.href =
-        "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap";
-      document.head.appendChild(monoLink);
-    }
-
-    if (!document.getElementById(styleId)) {
-      const style = document.createElement("style");
-      style.id = styleId;
-      style.textContent = `
+    loadDocumentAssets({
+      fonts: ["dmSans", "jetbrainsMono"],
+      styles: [
+        {
+          id: "olivander-landing-effects",
+          css: `
         @keyframes olivander-hero-glow {
           0% { opacity: 0.55; transform: translateX(-50%) scale(0.97); }
           50% { opacity: 1; transform: translateX(-50%) scale(1.03); }
@@ -158,9 +139,10 @@ function Landing() {
         .olivander-modal-input::placeholder {
           color: rgba(255,255,255,0.32);
         }
-      `;
-      document.head.appendChild(style);
-    }
+      `,
+        },
+      ],
+    });
 
     const frame = window.requestAnimationFrame(() => {
       setHeroVisible(true);

@@ -5,13 +5,30 @@ import os
 import time
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from supabase import Client, create_client
+
+from backend.security import (
+    MAX_ACTION_DRAFT_LENGTH,
+    MAX_ACTION_LABEL_LENGTH,
+    MAX_ACTION_REASONING_LENGTH,
+    AuthenticatedUser,
+    GenerateActionRequest,
+    GmailNotificationPayload,
+    GmailWebhookEnvelope,
+    RateLimitExceeded,
+    enforce_rate_limits,
+    get_authenticated_user,
+    sanitize_text,
+)
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -42,9 +59,9 @@ GEMINI_URL = (
 ACTION_RESPONSE_SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        "reasoning": {"type": "STRING"},
-        "action": {"type": "STRING"},
-        "draft": {"type": "STRING"},
+        "reasoning": {"type": "STRING", "maxLength": MAX_ACTION_REASONING_LENGTH},
+        "action": {"type": "STRING", "maxLength": MAX_ACTION_LABEL_LENGTH},
+        "draft": {"type": "STRING", "maxLength": MAX_ACTION_DRAFT_LENGTH},
     },
     "required": ["reasoning", "action", "draft"],
 }
@@ -58,12 +75,6 @@ ACTION_SYSTEM_PROMPT = (
 )
 
 
-class GenerateActionRequest(BaseModel):
-    user_id: str
-    situation: str
-    user_context: dict[str, Any] = Field(default_factory=dict)
-
-
 def get_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
@@ -75,7 +86,6 @@ def get_env(name: str) -> str:
 def get_supabase_client() -> Client:
     url = get_env("SUPABASE_URL")
     key = get_env("SUPABASE_SERVICE_KEY")
-    logger.info("Creating Supabase client for %s", url)
     return create_client(url, key)
 
 
@@ -105,9 +115,22 @@ def parse_generated_action(response_json: dict[str, Any]) -> dict[str, str]:
         raise ValueError("Gemini returned malformed action JSON")
 
     return {
-        "reasoning": reasoning.strip(),
-        "action_label": action.strip(),
-        "draft": draft.strip(),
+        "reasoning": sanitize_text(
+            reasoning,
+            field_name="reasoning",
+            max_length=MAX_ACTION_REASONING_LENGTH,
+        ),
+        "action_label": sanitize_text(
+            action,
+            field_name="action",
+            max_length=MAX_ACTION_LABEL_LENGTH,
+        ),
+        "draft": sanitize_text(
+            draft,
+            field_name="draft",
+            max_length=MAX_ACTION_DRAFT_LENGTH,
+            multiline=True,
+        ),
     }
 
 
@@ -157,7 +180,7 @@ async def call_gemini_for_action(
     logger.info("Gemini response status=%s", response.status_code)
 
     if response.status_code >= 400:
-        logger.error("Gemini error body=%s", response.text)
+        logger.error("Gemini request failed status=%s", response.status_code)
         raise HTTPException(status_code=502, detail="Failed to generate action.")
 
     try:
@@ -171,10 +194,10 @@ async def process_new_email(
     user_id: str | None, history_id: str | None, payload: dict[str, Any]
 ) -> None:
     logger.info(
-        "process_new_email stub user_id=%s history_id=%s payload=%s",
+        "process_new_email stub user_id=%s history_id=%s payload_keys=%s",
         user_id,
         history_id,
-        payload,
+        sorted(payload.keys()),
     )
 
 
@@ -199,11 +222,14 @@ def insert_action(
         "user_id": user_id,
         "status": "pending",
         "reasoning": generated_action["reasoning"],
-        "action_label": generated_action.get("title")
-        or generated_action.get("action_label"),
+        "action_label": generated_action["action_label"],
         "draft": generated_action["draft"],
     }
-    logger.info("Supabase insert action payload=%s", payload)
+    logger.info(
+        "Creating action for user_id=%s action_label=%s",
+        user_id,
+        generated_action["action_label"],
+    )
     response = supabase.table("actions").insert(payload).execute()
     rows = response.data or []
     if not rows:
@@ -213,15 +239,25 @@ def insert_action(
 
 
 def update_action_status(
-    supabase: Client, action_id: str, status: str
+    supabase: Client, action_id: UUID, user_id: str, status: str
 ) -> dict[str, Any]:
-    logger.info("Supabase update action_id=%s status=%s", action_id, status)
-    supabase.table("actions").update({"status": status}).eq("id", action_id).execute()
-    response = supabase.table("actions").select("*").eq("id", action_id).limit(1).execute()
+    action_id_str = str(action_id)
+    logger.info("Supabase update action_id=%s user_id=%s status=%s", action_id_str, user_id, status)
+    supabase.table("actions").update({"status": status}).eq("id", action_id_str).eq(
+        "user_id", user_id
+    ).execute()
+    response = (
+        supabase.table("actions")
+        .select("*")
+        .eq("id", action_id_str)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
     rows = response.data or []
     if not rows:
         raise HTTPException(status_code=404, detail="Action not found.")
-    logger.info("Supabase fetched updated action_id=%s", action_id)
+    logger.info("Supabase fetched updated action_id=%s", action_id_str)
     return rows[0]
 
 
@@ -256,64 +292,124 @@ async def log_requests(request: Request, call_next):
         response.status_code,
         duration_ms,
     )
+    response.headers.setdefault("Cache-Control", "no-store")
+    response.headers.setdefault("Pragma", "no-cache")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
     return response
 
 
+@app.exception_handler(RateLimitExceeded)
+async def handle_rate_limit_exceeded(
+    _request: Request, exc: RateLimitExceeded
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": exc.detail,
+            "retry_after_seconds": exc.retry_after_seconds,
+        },
+        headers={"Retry-After": str(exc.retry_after_seconds)},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Invalid request payload.",
+            "errors": exc.errors(),
+        },
+    )
+
+
+async def get_current_user_dependency(request: Request) -> Any:
+    return await get_authenticated_user(
+        request,
+        supabase_url=get_env("SUPABASE_URL"),
+        service_role_key=get_env("SUPABASE_SERVICE_KEY"),
+    )
+
+
 @app.get("/")
-async def health_check() -> dict[str, str]:
+async def health_check(request: Request) -> dict[str, str]:
+    enforce_rate_limits(request, "health_check")
     return {"status": "Olivander API running"}
 
 
 @app.post("/webhook/gmail")
 async def gmail_webhook(
-    request: Request, background_tasks: BackgroundTasks
+    envelope: GmailWebhookEnvelope,
+    request: Request,
+    background_tasks: BackgroundTasks,
 ) -> dict[str, bool]:
     try:
-        body = await request.json()
-        logger.info("Received Gmail webhook body=%s", body)
-
-        message = body.get("message", {})
-        encoded_data = message.get("data")
-        if not encoded_data:
-            logger.warning("Gmail webhook missing message.data")
-            return {"ok": True}
-
-        payload = decode_base64_json(encoded_data)
-        email_address = payload.get("emailAddress")
-        history_id = payload.get("historyId")
+        payload = decode_base64_json(envelope.message.data)
+        notification = GmailNotificationPayload.model_validate(payload)
+        enforce_rate_limits(
+            request,
+            "gmail_webhook",
+            user_identifier=notification.emailAddress,
+        )
         logger.info(
             "Decoded Gmail webhook email=%s history_id=%s",
-            email_address,
-            history_id,
+            notification.emailAddress,
+            notification.historyId,
         )
-        background_tasks.add_task(handle_gmail_notification, payload)
+        background_tasks.add_task(handle_gmail_notification, notification.model_dump())
+    except RateLimitExceeded:
+        raise
+    except HTTPException:
+        raise
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid webhook payload.") from exc
     except Exception:
         logger.exception("Failed to handle Gmail webhook")
+        raise HTTPException(status_code=500, detail="Failed to handle webhook.")
 
     return {"ok": True}
 
 
 @app.post("/actions/generate")
-async def generate_action(request_body: GenerateActionRequest) -> dict[str, Any]:
+async def generate_action(
+    request_body: GenerateActionRequest,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user_dependency),
+) -> dict[str, Any]:
+    enforce_rate_limits(request, "actions_generate", user_identifier=current_user.id)
     supabase = get_supabase_client()
     generated_action = await call_gemini_for_action(
         request_body.situation,
         request_body.user_context,
     )
-    created_row = insert_action(supabase, request_body.user_id, generated_action)
+    created_row = insert_action(supabase, current_user.id, generated_action)
     return created_row
 
 
 @app.post("/actions/{action_id}/approve")
-async def approve_action(action_id: str) -> dict[str, Any]:
+async def approve_action(
+    action_id: UUID,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user_dependency),
+) -> dict[str, Any]:
+    enforce_rate_limits(request, "actions_mutation", user_identifier=current_user.id)
     supabase = get_supabase_client()
-    updated_row = update_action_status(supabase, action_id, "approved")
-    logger.info("would send email for action_id=%s", action_id)
+    updated_row = update_action_status(supabase, action_id, current_user.id, "approved")
+    logger.info("would send email for action_id=%s user_id=%s", action_id, current_user.id)
     return updated_row
 
 
 @app.post("/actions/{action_id}/dismiss")
-async def dismiss_action(action_id: str) -> dict[str, Any]:
+async def dismiss_action(
+    action_id: UUID,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user_dependency),
+) -> dict[str, Any]:
+    enforce_rate_limits(request, "actions_mutation", user_identifier=current_user.id)
     supabase = get_supabase_client()
-    updated_row = update_action_status(supabase, action_id, "dismissed")
+    updated_row = update_action_status(supabase, action_id, current_user.id, "dismissed")
     return updated_row
