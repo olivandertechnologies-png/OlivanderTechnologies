@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { requestGeneratedAction } from "./agentState.js";
 import {
   buildAgentContext,
   fetchDoneTodayActions,
   fetchPendingActions,
   fetchUserProfile,
-  insertGeneratedAction,
   updateActionStatus,
 } from "./dataLayer.js";
 import { useAuth } from "./hooks/useAuth.js";
@@ -63,6 +61,7 @@ function App() {
   const [actions, setActions] = useState([]);
   const [completed, setCompleted] = useState([]);
   const [contextItems, setContextItems] = useState([]);
+  const [profileSettings, setProfileSettings] = useState(null);
   const [generatorPrompt, setGeneratorPrompt] = useState("");
   const [generatorCard, setGeneratorCard] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -166,11 +165,13 @@ function App() {
       try {
         const settings = await fetchUserProfile(user);
         if (isMounted) {
+          setProfileSettings(settings);
           setContextItems(buildAgentContext(settings));
         }
       } catch (error) {
         console.error("Failed to fetch user context", error);
         if (isMounted) {
+          setProfileSettings(null);
           setContextError("Something went wrong. Try refreshing.");
           setContextItems([]);
         }
@@ -253,19 +254,57 @@ function App() {
     setFeedError("");
 
     try {
-      const generated = await requestGeneratedAction(prompt);
-      const insertedAction = await insertGeneratedAction(user.id, generated);
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/actions/generate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            user_id: user.id,
+            situation: prompt,
+            user_context: {
+              name: profileSettings?.profile?.name || "",
+              business_name: profileSettings?.profile?.businessName || "",
+              what_you_do: profileSettings?.profile?.work || "",
+              email_signoff: profileSettings?.profile?.signoff || "",
+            },
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`Backend generation failed with ${response.status}`);
+      }
+
+      const createdAction = await response.json();
+      const insertedAction = {
+        id: createdAction.id,
+        reasoning: createdAction.reasoning || "",
+        title: createdAction.action_label || createdAction.title || "",
+        draft: createdAction.draft || "",
+        status: createdAction.status || "pending",
+        createdAt: createdAction.created_at || null,
+        time: createdAction.created_at
+          ? new Date(createdAction.created_at).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+        phase: "idle",
+      };
+
       setActions((current) => [insertedAction, ...current]);
       setGeneratorCard(null);
     } catch (error) {
       console.error("Failed to generate action", error);
-      const message =
-        error?.code === "missing-api-key"
-          ? "The agent couldn't generate an action. Add your Groq API key in .env and restart the app."
-          : "The agent couldn't generate an action. Try rephrasing.";
       setGeneratorCard({
         status: "error",
-        message,
+        message: "The agent couldn't generate an action. Try rephrasing.",
       });
     } finally {
       setIsGenerating(false);

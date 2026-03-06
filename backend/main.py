@@ -106,7 +106,7 @@ def parse_generated_action(response_json: dict[str, Any]) -> dict[str, str]:
 
     return {
         "reasoning": reasoning.strip(),
-        "title": action.strip(),
+        "action_label": action.strip(),
         "draft": draft.strip(),
     }
 
@@ -199,7 +199,8 @@ def insert_action(
         "user_id": user_id,
         "status": "pending",
         "reasoning": generated_action["reasoning"],
-        "title": generated_action["title"],
+        "action_label": generated_action.get("title")
+        or generated_action.get("action_label"),
         "draft": generated_action["draft"],
     }
     logger.info("Supabase insert action payload=%s", payload)
