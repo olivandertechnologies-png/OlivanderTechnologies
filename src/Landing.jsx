@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadDocumentAssets } from "./documentAssets.js";
 import { navigate } from "./router.js";
+import { GOOGLE_OAUTH_QUERY_PARAMS, GOOGLE_OAUTH_SCOPES } from "./security.js";
 import { supabase } from "./supabase.js";
 
 const palette = {
@@ -228,6 +229,8 @@ function Landing() {
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
+          scopes: GOOGLE_OAUTH_SCOPES,
+          queryParams: GOOGLE_OAUTH_QUERY_PARAMS,
         },
       });
 
@@ -422,10 +425,14 @@ function Landing() {
               style={staggeredStyle(heroVisible, 3, {
                 marginTop: "34px",
                 display: "flex",
-                alignItems: "center",
+                flexDirection: "column",
+                alignItems: "stretch",
                 justifyContent: "center",
-                gap: "18px",
-                flexWrap: "wrap",
+                gap: "12px",
+                width: "100%",
+                maxWidth: "360px",
+                marginLeft: "auto",
+                marginRight: "auto",
               })}
             >
               <button
@@ -441,18 +448,53 @@ function Landing() {
                   fontWeight: 700,
                   fontFamily: "'DM Sans', sans-serif",
                   cursor: "pointer",
+                  width: "100%",
                 }}
               >
-                Join the waitlist
+                Create your account
               </button>
+
               <div
                 style={{
                   color: palette.muted,
-                  fontSize: "15px",
+                  fontSize: "14px",
                   fontWeight: 500,
+                  textAlign: "center",
                 }}
               >
-                $49 NZD/month at launch
+                or
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSignIn}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.16)",
+                  borderRadius: "10px",
+                  backgroundColor: "transparent",
+                  color: palette.text,
+                  padding: "15px 22px",
+                  fontSize: "15px",
+                  fontWeight: 700,
+                  fontFamily: "'DM Sans', sans-serif",
+                  cursor: "pointer",
+                  width: "100%",
+                }}
+              >
+                Sign in
+              </button>
+
+              <div
+                style={{
+                  marginTop: "2px",
+                  color: "rgba(255,255,255,0.4)",
+                  fontSize: "13px",
+                  fontFamily: "'DM Sans', sans-serif",
+                  lineHeight: 1.5,
+                  textAlign: "center",
+                }}
+              >
+                We use Google to verify your identity. Your Olivander account is separate.
               </div>
             </div>
           </div>

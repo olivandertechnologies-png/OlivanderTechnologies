@@ -10,30 +10,73 @@ export const PROFILE_FIELD_LIMITS = Object.freeze({
   signoff: 80,
   turnaround: 60,
   role: 120,
+  clientType: 160,
+  clientSource: 160,
+  emailNeverSay: 160,
+});
+export const TONE_OPTIONS = Object.freeze(["Friendly", "Professional", "Direct"]);
+export const CLIENT_COUNT_OPTIONS = Object.freeze(["1-5", "6-15", "16-30", "30+"]);
+export const TURNAROUND_OPTIONS = Object.freeze([
+  "Same day",
+  "1-2 days",
+  "3-5 days",
+  "1 week+",
+]);
+export const FOLLOW_UP_DELAY_OPTIONS = Object.freeze([
+  "2 days",
+  "3 days",
+  "5 days",
+  "1 week",
+]);
+export const FOLLOW_UP_INVOICE_DELAY_OPTIONS = Object.freeze([
+  "On due date",
+  "3 days after",
+  "1 week after",
+  "2 weeks after",
+]);
+export const GOOGLE_OAUTH_SCOPES = Object.freeze([
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.compose",
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/calendar.events",
+].join(" "));
+export const GOOGLE_OAUTH_QUERY_PARAMS = Object.freeze({
+  access_type: "offline",
+  prompt: "consent",
 });
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LOCAL_API_HOSTS = new Set(["localhost", "127.0.0.1"]);
-const ALLOWED_TONES = new Set(["Professional", "Friendly", "Direct"]);
-const ALLOWED_FOLLOW_UP_DELAYS = new Set([
-  "After 2 days",
-  "After 3 days",
-  "After 5 days",
+const ALLOWED_TONES = new Set(TONE_OPTIONS);
+const ALLOWED_CLIENT_COUNTS = new Set(CLIENT_COUNT_OPTIONS);
+const ALLOWED_TURNAROUNDS = new Set(TURNAROUND_OPTIONS);
+const ALLOWED_FOLLOW_UP_DELAYS = new Set(FOLLOW_UP_DELAY_OPTIONS);
+const ALLOWED_FOLLOW_UP_INVOICE_DELAYS = new Set(FOLLOW_UP_INVOICE_DELAY_OPTIONS);
+const LEGACY_FOLLOW_UP_DELAY_VALUES = new Map([
+  ["After 2 days", "2 days"],
+  ["After 3 days", "3 days"],
+  ["After 5 days", "5 days"],
 ]);
 
 export const DEFAULT_PROFILE = Object.freeze({
+  onboardingComplete: false,
   profile: {
     name: "",
     businessName: "",
     work: "",
     signoff: "",
     turnaround: "",
+    clientType: "",
+    clientCount: "",
+    clientSource: "",
+    emailNeverSay: "",
   },
   behaviour: {
-    tone: "Professional",
-    followUpDelay: "After 3 days",
-    autoDismissLowPriority: false,
+    tone: "",
+    followUpDelay: "",
+    followUpInvoiceDelay: "",
+    weeklyDigestEnabled: true,
   },
   integrations: {
     calendarConnected: false,
@@ -70,8 +113,7 @@ function normalizeText(value, { maxLength, multiline = false }) {
 
       return char >= " " && char !== "\u007f";
     })
-    .join("")
-    .trim();
+    .join("");
 
   return cleaned.slice(0, maxLength);
 }
@@ -82,15 +124,16 @@ function validateRequiredText(value, { label, maxLength, multiline = false }) {
   }
 
   const cleaned = normalizeText(value, { maxLength, multiline });
-  if (!cleaned) {
+  const trimmed = cleaned.trim();
+  if (!trimmed) {
     throw new Error(`${label} must not be blank.`);
   }
 
-  if (value.trim().length > maxLength || cleaned.length > maxLength) {
+  if (value.trim().length > maxLength || trimmed.length > maxLength) {
     throw new Error(`${label} must be at most ${maxLength} characters.`);
   }
 
-  return cleaned;
+  return trimmed;
 }
 
 function validateOptionalText(value, { label, maxLength, multiline = false }) {
@@ -98,7 +141,25 @@ function validateOptionalText(value, { label, maxLength, multiline = false }) {
     throw new Error(`${label} must be a string.`);
   }
 
-  return normalizeText(value, { maxLength, multiline });
+  return normalizeText(value, { maxLength, multiline }).trim();
+}
+
+function normalizeLegacyFollowUpDelay(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmedValue = value.trim();
+  return LEGACY_FOLLOW_UP_DELAY_VALUES.get(trimmedValue) ?? trimmedValue;
+}
+
+function normalizeSelection(value, allowedValues, fallback = "") {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const trimmedValue = value.trim();
+  return allowedValues.has(trimmedValue) ? trimmedValue : fallback;
 }
 
 export function sanitizePromptInput(value) {
@@ -118,21 +179,43 @@ export function sanitizeProfileFieldInput(field, value) {
 }
 
 export function sanitizeSettingsFieldValue(section, field, value) {
+  if (section === "profile" && field === "turnaround") {
+    return normalizeSelection(value, ALLOWED_TURNAROUNDS, DEFAULT_PROFILE.profile.turnaround);
+  }
+
+  if (section === "profile" && field === "clientCount") {
+    return normalizeSelection(
+      value,
+      ALLOWED_CLIENT_COUNTS,
+      DEFAULT_PROFILE.profile.clientCount,
+    );
+  }
+
   if (section === "profile") {
     return sanitizeProfileFieldInput(field, value);
   }
 
   if (section === "behaviour" && field === "tone") {
-    return ALLOWED_TONES.has(value) ? value : DEFAULT_PROFILE.behaviour.tone;
+    return normalizeSelection(value, ALLOWED_TONES, DEFAULT_PROFILE.behaviour.tone);
   }
 
   if (section === "behaviour" && field === "followUpDelay") {
-    return ALLOWED_FOLLOW_UP_DELAYS.has(value)
-      ? value
-      : DEFAULT_PROFILE.behaviour.followUpDelay;
+    return normalizeSelection(
+      normalizeLegacyFollowUpDelay(value),
+      ALLOWED_FOLLOW_UP_DELAYS,
+      DEFAULT_PROFILE.behaviour.followUpDelay,
+    );
   }
 
-  if (section === "behaviour" && field === "autoDismissLowPriority") {
+  if (section === "behaviour" && field === "followUpInvoiceDelay") {
+    return normalizeSelection(
+      value,
+      ALLOWED_FOLLOW_UP_INVOICE_DELAYS,
+      DEFAULT_PROFILE.behaviour.followUpInvoiceDelay,
+    );
+  }
+
+  if (section === "behaviour" && field === "weeklyDigestEnabled") {
     return Boolean(value);
   }
 
@@ -148,7 +231,11 @@ export function sanitizeSettingsInput(settings) {
     throw new Error("Settings must be an object.");
   }
 
-  rejectUnexpectedKeys(settings, ["profile", "behaviour", "integrations"], "Settings");
+  rejectUnexpectedKeys(
+    settings,
+    ["onboardingComplete", "profile", "behaviour", "integrations"],
+    "Settings",
+  );
 
   const profile = isPlainObject(settings.profile) ? settings.profile : {};
   const behaviour = isPlainObject(settings.behaviour) ? settings.behaviour : {};
@@ -156,12 +243,27 @@ export function sanitizeSettingsInput(settings) {
 
   rejectUnexpectedKeys(
     profile,
-    ["name", "businessName", "work", "signoff", "turnaround"],
+    [
+      "name",
+      "businessName",
+      "work",
+      "signoff",
+      "turnaround",
+      "clientType",
+      "clientCount",
+      "clientSource",
+      "emailNeverSay",
+    ],
     "Profile settings",
   );
   rejectUnexpectedKeys(
     behaviour,
-    ["tone", "followUpDelay", "autoDismissLowPriority"],
+    [
+      "tone",
+      "followUpDelay",
+      "followUpInvoiceDelay",
+      "weeklyDigestEnabled",
+    ],
     "Behaviour settings",
   );
   rejectUnexpectedKeys(
@@ -171,6 +273,7 @@ export function sanitizeSettingsInput(settings) {
   );
 
   return {
+    onboardingComplete: Boolean(settings.onboardingComplete),
     profile: {
       name: validateOptionalText(profile.name ?? "", {
         label: "Name",
@@ -188,19 +291,49 @@ export function sanitizeSettingsInput(settings) {
         label: "Sign-off",
         maxLength: PROFILE_FIELD_LIMITS.signoff,
       }),
-      turnaround: validateOptionalText(profile.turnaround ?? "", {
-        label: "Turnaround",
-        maxLength: PROFILE_FIELD_LIMITS.turnaround,
+      turnaround: normalizeSelection(
+        profile.turnaround ?? "",
+        ALLOWED_TURNAROUNDS,
+        DEFAULT_PROFILE.profile.turnaround,
+      ),
+      clientType: validateOptionalText(profile.clientType ?? "", {
+        label: "Typical client type",
+        maxLength: PROFILE_FIELD_LIMITS.clientType,
+      }),
+      clientCount: normalizeSelection(
+        profile.clientCount ?? "",
+        ALLOWED_CLIENT_COUNTS,
+        DEFAULT_PROFILE.profile.clientCount,
+      ),
+      clientSource: validateOptionalText(profile.clientSource ?? "", {
+        label: "Client source",
+        maxLength: PROFILE_FIELD_LIMITS.clientSource,
+      }),
+      emailNeverSay: validateOptionalText(profile.emailNeverSay ?? "", {
+        label: "Email never say",
+        maxLength: PROFILE_FIELD_LIMITS.emailNeverSay,
       }),
     },
     behaviour: {
-      tone: ALLOWED_TONES.has(behaviour.tone)
-        ? behaviour.tone
-        : DEFAULT_PROFILE.behaviour.tone,
-      followUpDelay: ALLOWED_FOLLOW_UP_DELAYS.has(behaviour.followUpDelay)
-        ? behaviour.followUpDelay
-        : DEFAULT_PROFILE.behaviour.followUpDelay,
-      autoDismissLowPriority: Boolean(behaviour.autoDismissLowPriority),
+      tone: normalizeSelection(
+        behaviour.tone ?? "",
+        ALLOWED_TONES,
+        DEFAULT_PROFILE.behaviour.tone,
+      ),
+      followUpDelay: normalizeSelection(
+        normalizeLegacyFollowUpDelay(behaviour.followUpDelay ?? ""),
+        ALLOWED_FOLLOW_UP_DELAYS,
+        DEFAULT_PROFILE.behaviour.followUpDelay,
+      ),
+      followUpInvoiceDelay: normalizeSelection(
+        behaviour.followUpInvoiceDelay ?? "",
+        ALLOWED_FOLLOW_UP_INVOICE_DELAYS,
+        DEFAULT_PROFILE.behaviour.followUpInvoiceDelay,
+      ),
+      weeklyDigestEnabled:
+        typeof behaviour.weeklyDigestEnabled === "boolean"
+          ? behaviour.weeklyDigestEnabled
+          : DEFAULT_PROFILE.behaviour.weeklyDigestEnabled,
     },
     integrations: {
       calendarConnected: Boolean(integrations.calendarConnected),

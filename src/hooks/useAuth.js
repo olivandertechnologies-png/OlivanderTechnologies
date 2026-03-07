@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { ensureUserBootstrap } from "../dataLayer.js";
+import {
+  ensureUserBootstrap,
+  fetchOnboardingStatus,
+  syncGoogleProviderSession,
+} from "../dataLayer.js";
 import { navigate } from "../router.js";
 import { supabase } from "../supabase.js";
 
@@ -24,10 +28,26 @@ export function useAuth() {
         return;
       }
 
+      let onboardingComplete = false;
+      let hasOnboardingStatus = false;
+
       try {
         await ensureUserBootstrap(nextUser);
       } catch (error) {
         console.error("Failed to bootstrap Supabase user", error);
+      }
+
+      try {
+        await syncGoogleProviderSession(session);
+      } catch (error) {
+        console.error("Failed to sync Google provider session", error);
+      }
+
+      try {
+        onboardingComplete = await fetchOnboardingStatus(nextUser);
+        hasOnboardingStatus = true;
+      } catch (error) {
+        console.error("Failed to fetch onboarding status", error);
       }
 
       if (!isMounted) {
@@ -36,6 +56,16 @@ export function useAuth() {
 
       setUser(nextUser);
       setLoading(false);
+
+      const currentPath = window.location.pathname;
+      if (hasOnboardingStatus && !onboardingComplete && currentPath !== "/onboarding") {
+        navigate("/onboarding", { replace: true });
+        return;
+      }
+
+      if (hasOnboardingStatus && onboardingComplete && currentPath === "/onboarding") {
+        navigate("/dashboard", { replace: true });
+      }
     };
 
     const loadSession = async () => {

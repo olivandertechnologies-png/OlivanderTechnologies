@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DEFAULT_PROFILE,
   fetchUserProfile,
@@ -37,7 +37,9 @@ function navLinkStyle(active) {
 function Sidebar({ user }) {
   const pathname = usePathname();
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [hoveredLink, setHoveredLink] = useState(null);
+  const [hoveredMenuItem, setHoveredMenuItem] = useState(null);
   const [settings, setSettings] = useState(DEFAULT_PROFILE);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState("");
@@ -45,6 +47,7 @@ function Sidebar({ user }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const accountMenuRef = useRef(null);
 
   useEffect(() => {
     loadDocumentAssets({
@@ -87,12 +90,33 @@ function Sidebar({ user }) {
     };
   }, [user]);
 
+  useEffect(() => {
+    if (!isAccountMenuOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (!accountMenuRef.current?.contains(event.target)) {
+        setIsAccountMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [isAccountMenuOpen]);
+
   const handleNavigate = (event, path) => {
     event.preventDefault();
     navigate(path);
   };
 
   const handleOpenSettings = async () => {
+    setIsAccountMenuOpen(false);
     setIsPanelOpen(true);
     setLoadingProfile(true);
     setProfileError("");
@@ -148,6 +172,7 @@ function Sidebar({ user }) {
       return;
     }
 
+    setIsAccountMenuOpen(false);
     setIsSigningOut(true);
     setProfileError("");
 
@@ -165,6 +190,10 @@ function Sidebar({ user }) {
       setIsSigningOut(false);
       setIsPanelOpen(false);
     }
+  };
+
+  const handleToggleAccountMenu = () => {
+    setIsAccountMenuOpen((current) => !current);
   };
 
   const name = settings.profile.name || user?.user_metadata?.full_name || user?.email || "User";
@@ -208,6 +237,7 @@ function Sidebar({ user }) {
           {[
             { label: "Dashboard", path: "/dashboard" },
             { label: "Clients", path: "/clients" },
+            { label: "History", path: "/history" },
           ].map((link) => {
             const active = pathname === link.path;
             const hovered = hoveredLink === link.path;
@@ -239,11 +269,80 @@ function Sidebar({ user }) {
         <div style={{ flex: 1 }} />
 
         <div
+          ref={accountMenuRef}
           style={{
+            position: "relative",
             paddingTop: "20px",
             borderTop: `1px solid ${palette.border}`,
           }}
         >
+          {isAccountMenuOpen ? (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                bottom: "calc(100% + 8px)",
+                minWidth: "156px",
+                padding: "6px",
+                borderRadius: "10px",
+                border: "1px solid rgba(255,255,255,0.1)",
+                backgroundColor: "#0e1422",
+                boxSizing: "border-box",
+                boxShadow: "0 16px 40px rgba(0, 0, 0, 0.28)",
+                zIndex: 2,
+              }}
+            >
+              {[
+                {
+                  id: "settings",
+                  label: "Settings",
+                  onClick: handleOpenSettings,
+                },
+                {
+                  id: "signout",
+                  label: isSigningOut ? "Signing out..." : "Sign out",
+                  onClick: handleSignOut,
+                  disabled: isSigningOut,
+                },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={item.onClick}
+                  onMouseEnter={() => setHoveredMenuItem(item.id)}
+                  onMouseLeave={() =>
+                    setHoveredMenuItem((current) =>
+                      current === item.id ? null : current,
+                    )
+                  }
+                  disabled={item.disabled}
+                  style={{
+                    width: "100%",
+                    height: "36px",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "0 12px",
+                    border: "none",
+                    borderRadius: "8px",
+                    backgroundColor:
+                      hoveredMenuItem === item.id
+                        ? "rgba(255,255,255,0.06)"
+                        : "transparent",
+                    color: palette.text,
+                    fontSize: "14px",
+                    fontWeight: 400,
+                    fontFamily: "'DM Sans', sans-serif",
+                    cursor: item.disabled ? "default" : "pointer",
+                    textAlign: "left",
+                    opacity: item.disabled ? 0.6 : 1,
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           <div
             style={{
               display: "flex",
@@ -253,8 +352,9 @@ function Sidebar({ user }) {
           >
             <button
               type="button"
-              aria-label="Open settings"
-              onClick={handleOpenSettings}
+              aria-label="Open account menu"
+              aria-expanded={isAccountMenuOpen}
+              onClick={handleToggleAccountMenu}
               style={{
                 width: "32px",
                 height: "32px",

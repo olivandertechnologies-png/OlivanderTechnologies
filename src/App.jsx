@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   buildAgentContext,
   fetchDoneTodayActions,
@@ -18,11 +18,16 @@ const palette = {
   border: "rgba(255,255,255,0.07)",
   text: "#ffffff",
   muted: "rgba(255,255,255,0.4)",
+  mutedStrong: "rgba(255,255,255,0.55)",
   faint: "rgba(255,255,255,0.2)",
   blue: "#4f8ef7",
   blueSoft: "rgba(79,142,247,0.12)",
+  blueSoftStrong: "rgba(79,142,247,0.15)",
   blueGlow: "rgba(79,142,247,0.3)",
   green: "#34c759",
+  amber: "#f5a623",
+  red: "#e05252",
+  tooltip: "#121926",
   mono: "rgba(255,255,255,0.7)",
   dismiss: "rgba(255,255,255,0.3)",
 };
@@ -59,6 +64,390 @@ function DashboardShellMessage({ message }) {
   );
 }
 
+function ChevronIcon({ expanded }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 12 12"
+      style={{
+        width: "12px",
+        height: "12px",
+        transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+        transition: "transform 250ms ease",
+      }}
+    >
+      <path
+        d="M2.25 4.5 6 8.25 9.75 4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function getConfidencePresentation(confidence) {
+  switch (confidence) {
+    case "high":
+      return {
+        label: "High confidence",
+        color: palette.green,
+      };
+    case "medium":
+      return {
+        label: "Review carefully",
+        color: palette.amber,
+      };
+    case "low":
+      return {
+        label: "Needs your attention",
+        color: palette.red,
+      };
+    default:
+      return null;
+  }
+}
+
+function getPriorityAccentColor(priorityScore) {
+  if (priorityScore >= 8) {
+    return palette.red;
+  }
+
+  if (priorityScore >= 5) {
+    return palette.amber;
+  }
+
+  return null;
+}
+
+function getActionCreatedAtValue(action) {
+  if (!action?.createdAt) {
+    return 0;
+  }
+
+  const parsedDate = new Date(action.createdAt);
+  return Number.isNaN(parsedDate.getTime()) ? 0 : parsedDate.getTime();
+}
+
+function ActionCard({ action, onApprove, onDismiss }) {
+  const [isReasoningOpen, setIsReasoningOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isConfidenceHovered, setIsConfidenceHovered] = useState(false);
+
+  const isApproving = action.phase === "approving";
+  const isDismissing = action.phase === "dismissing";
+  const hasSteps = action.steps.length > 0;
+  const stepTrailMaxHeight = `${action.steps.length * 72 + 32}px`;
+  const confidencePresentation = getConfidencePresentation(action.confidence);
+  const priorityAccentColor = getPriorityAccentColor(action.priorityScore);
+
+  return (
+    <article
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        backgroundColor: palette.surface,
+        border: `1px solid ${palette.border}`,
+        borderTop: `2px solid ${isHovered ? palette.blue : "transparent"}`,
+        borderRadius: "14px",
+        padding: "24px",
+        boxSizing: "border-box",
+        boxShadow: priorityAccentColor ? `inset 3px 0 0 ${priorityAccentColor}` : "none",
+        transition:
+          "opacity 300ms ease, transform 300ms ease, border-top-color 180ms ease",
+        opacity: isApproving || isDismissing ? 0 : 1,
+        transform: isApproving
+          ? "scale(0.98)"
+          : isDismissing
+            ? "translateX(-20px)"
+            : "translateX(0) scale(1)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          marginBottom: "12px",
+        }}
+      >
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            padding: "2px 8px",
+            borderRadius: "20px",
+            backgroundColor: palette.blueSoft,
+            color: palette.blue,
+            fontSize: "11px",
+            fontWeight: 700,
+          }}
+        >
+          {inferActionType(action)}
+        </div>
+
+        {confidencePresentation ? (
+          <div style={{ marginLeft: "auto", position: "relative" }}>
+            <button
+              type="button"
+              onMouseEnter={() => setIsConfidenceHovered(true)}
+              onMouseLeave={() => setIsConfidenceHovered(false)}
+              onFocus={() => setIsConfidenceHovered(true)}
+              onBlur={() => setIsConfidenceHovered(false)}
+              aria-label={confidencePresentation.label}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                padding: 0,
+                border: "none",
+                backgroundColor: "transparent",
+                color: confidencePresentation.color,
+                fontSize: "11px",
+                fontWeight: 500,
+                fontFamily: "'DM Sans', sans-serif",
+                cursor: "help",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "999px",
+                  backgroundColor: confidencePresentation.color,
+                  flexShrink: 0,
+                }}
+              />
+              <span>{confidencePresentation.label}</span>
+            </button>
+
+            {isConfidenceHovered && action.confidenceReason ? (
+              <div
+                role="tooltip"
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  bottom: "calc(100% + 8px)",
+                  minWidth: "220px",
+                  maxWidth: "260px",
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  backgroundColor: palette.tooltip,
+                  color: "rgba(255,255,255,0.85)",
+                  fontSize: "12px",
+                  lineHeight: 1.5,
+                  boxShadow: "0 12px 24px rgba(0,0,0,0.22)",
+                  pointerEvents: "none",
+                  zIndex: 2,
+                }}
+              >
+                {action.confidenceReason}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        style={{
+          color: palette.muted,
+          fontSize: "13px",
+          lineHeight: 1.5,
+        }}
+      >
+        {action.reasoning}
+      </div>
+
+      <div
+        style={{
+          margin: "6px 0 0",
+          color: palette.text,
+          fontSize: "16px",
+          lineHeight: 1.3,
+          fontWeight: 600,
+          letterSpacing: "-0.02em",
+        }}
+      >
+        {action.title}
+      </div>
+
+      {hasSteps ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setIsReasoningOpen((current) => !current)}
+            aria-expanded={isReasoningOpen}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              marginTop: "8px",
+              padding: 0,
+              border: "none",
+              backgroundColor: "transparent",
+              color: palette.muted,
+              fontSize: "13px",
+              lineHeight: 1.4,
+              fontFamily: "'DM Sans', sans-serif",
+              cursor: "pointer",
+            }}
+          >
+            <ChevronIcon expanded={isReasoningOpen} />
+            {isReasoningOpen ? "Hide reasoning" : "See reasoning"}
+          </button>
+
+          <div
+            style={{
+              maxHeight: isReasoningOpen ? stepTrailMaxHeight : "0",
+              overflow: "hidden",
+              transition: "max-height 250ms ease",
+            }}
+          >
+            <div
+              style={{
+                marginTop: "8px",
+                padding: "12px 16px",
+                borderRadius: "8px",
+                backgroundColor: "rgba(255,255,255,0.03)",
+              }}
+            >
+              {action.steps.map((step, index) => (
+                <div
+                  key={`${action.id}-step-${index + 1}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "12px",
+                    padding: "4px 0",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "18px",
+                      height: "18px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: "999px",
+                      backgroundColor: palette.blueSoftStrong,
+                      color: palette.blue,
+                      fontSize: "11px",
+                      lineHeight: 1,
+                      fontWeight: 700,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {String(index + 1).padStart(2, "0")}
+                  </div>
+                  <div
+                    style={{
+                      color: palette.mutedStrong,
+                      fontSize: "13px",
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    {step}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      <div
+        style={{
+          marginTop: "16px",
+          border: `1px solid rgba(255,255,255,0.06)`,
+          borderRadius: "10px",
+          backgroundColor: "rgba(255,255,255,0.03)",
+          padding: "16px",
+        }}
+      >
+        <pre
+          style={{
+            margin: 0,
+            whiteSpace: "pre-wrap",
+            color: palette.mono,
+            fontSize: "12.5px",
+            lineHeight: 1.78,
+            fontFamily: "'JetBrains Mono', monospace",
+          }}
+        >
+          {action.draft}
+        </pre>
+      </div>
+
+      <div
+        style={{
+          marginTop: "20px",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => onApprove(action)}
+          disabled={isApproving || isDismissing}
+          style={{
+            border: "none",
+            backgroundColor: "#ffffff",
+            color: palette.page,
+            padding: "8px 20px",
+            borderRadius: "8px",
+            fontSize: "14px",
+            fontWeight: 500,
+            fontFamily: "'DM Sans', sans-serif",
+            cursor: isApproving || isDismissing ? "default" : "pointer",
+            opacity: isApproving || isDismissing ? 0.6 : 1,
+            transform: isHovered ? "scale(1.02)" : "scale(1)",
+            transition: "transform 160ms ease, opacity 160ms ease",
+          }}
+        >
+          Approve
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onDismiss(action)}
+          disabled={isApproving || isDismissing}
+          style={{
+            border: "none",
+            backgroundColor: "transparent",
+            color: isHovered ? "rgba(255,255,255,0.6)" : palette.dismiss,
+            padding: "8px 16px",
+            borderRadius: "8px",
+            fontSize: "14px",
+            fontWeight: 500,
+            fontFamily: "'DM Sans', sans-serif",
+            cursor: isApproving || isDismissing ? "default" : "pointer",
+            opacity: isApproving || isDismissing ? 0.6 : 1,
+            transition: "color 160ms ease, opacity 160ms ease",
+          }}
+        >
+          Dismiss
+        </button>
+
+        <div
+          style={{
+            marginLeft: "auto",
+            color: palette.faint,
+            fontSize: "11px",
+            fontWeight: 500,
+          }}
+        >
+          Prepared {action.time}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function App() {
   const { user, loading } = useAuth();
   const [actions, setActions] = useState([]);
@@ -69,12 +458,22 @@ function App() {
   const [generatorCard, setGeneratorCard] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBarFocused, setIsBarFocused] = useState(false);
-  const [hoveredCardId, setHoveredCardId] = useState(null);
   const [loadingActions, setLoadingActions] = useState(true);
   const [loadingCompleted, setLoadingCompleted] = useState(true);
   const [feedError, setFeedError] = useState("");
   const [completedError, setCompletedError] = useState("");
   const [contextError, setContextError] = useState("");
+  const sortedActions = useMemo(
+    () =>
+      [...actions].sort((left, right) => {
+        if (right.priorityScore !== left.priorityScore) {
+          return right.priorityScore - left.priorityScore;
+        }
+
+        return getActionCreatedAtValue(right) - getActionCreatedAtValue(left);
+      }),
+    [actions],
+  );
 
   useEffect(() => {
     loadDocumentAssets({
@@ -256,162 +655,6 @@ function App() {
     } finally {
       setIsGenerating(false);
     }
-  };
-
-  const renderActionCard = (action) => {
-    const isApproving = action.phase === "approving";
-    const isDismissing = action.phase === "dismissing";
-    const isHovered = hoveredCardId === action.id;
-
-    return (
-      <article
-        key={action.id}
-        onMouseEnter={() => setHoveredCardId(action.id)}
-        onMouseLeave={() =>
-          setHoveredCardId((current) => (current === action.id ? null : current))
-        }
-        style={{
-          backgroundColor: palette.surface,
-          border: `1px solid ${palette.border}`,
-          borderTop: `2px solid ${isHovered ? palette.blue : "transparent"}`,
-          borderRadius: "14px",
-          padding: "24px",
-          boxSizing: "border-box",
-          transition:
-            "opacity 300ms ease, transform 300ms ease, border-top-color 180ms ease",
-          opacity: isApproving || isDismissing ? 0 : 1,
-          transform: isApproving
-            ? "scale(0.98)"
-            : isDismissing
-              ? "translateX(-20px)"
-              : "translateX(0) scale(1)",
-        }}
-      >
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            marginBottom: "12px",
-            padding: "2px 8px",
-            borderRadius: "20px",
-            backgroundColor: palette.blueSoft,
-            color: palette.blue,
-            fontSize: "11px",
-            fontWeight: 700,
-          }}
-        >
-          {inferActionType(action)}
-        </div>
-
-        <div
-          style={{
-            color: palette.muted,
-            fontSize: "13px",
-            lineHeight: 1.5,
-          }}
-        >
-          {action.reasoning}
-        </div>
-
-        <div
-          style={{
-            margin: "6px 0 16px",
-            color: "#ffffff",
-            fontSize: "16px",
-            lineHeight: 1.3,
-            fontWeight: 600,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          {action.title}
-        </div>
-
-        <div
-          style={{
-            border: `1px solid rgba(255,255,255,0.06)`,
-            borderRadius: "10px",
-            backgroundColor: "rgba(255,255,255,0.03)",
-            padding: "16px",
-          }}
-        >
-          <pre
-            style={{
-              margin: 0,
-              whiteSpace: "pre-wrap",
-              color: palette.mono,
-              fontSize: "12.5px",
-              lineHeight: 1.78,
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            {action.draft}
-          </pre>
-        </div>
-
-        <div
-          style={{
-            marginTop: "20px",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => approveAction(action)}
-            disabled={isApproving || isDismissing}
-            style={{
-              border: "none",
-              backgroundColor: "#ffffff",
-              color: palette.page,
-              padding: "8px 20px",
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: 500,
-              fontFamily: "'DM Sans', sans-serif",
-              cursor: isApproving || isDismissing ? "default" : "pointer",
-              opacity: isApproving || isDismissing ? 0.6 : 1,
-              transform: isHovered ? "scale(1.02)" : "scale(1)",
-              transition: "transform 160ms ease, opacity 160ms ease",
-            }}
-          >
-            Approve
-          </button>
-
-          <button
-            type="button"
-            onClick={() => dismissAction(action)}
-            disabled={isApproving || isDismissing}
-            style={{
-              border: "none",
-              backgroundColor: "transparent",
-              color: isHovered ? "rgba(255,255,255,0.6)" : palette.dismiss,
-              padding: "8px 16px",
-              borderRadius: "8px",
-              fontSize: "14px",
-              fontWeight: 500,
-              fontFamily: "'DM Sans', sans-serif",
-              cursor: isApproving || isDismissing ? "default" : "pointer",
-              opacity: isApproving || isDismissing ? 0.6 : 1,
-              transition: "color 160ms ease, opacity 160ms ease",
-            }}
-          >
-            Dismiss
-          </button>
-
-          <div
-            style={{
-              marginLeft: "auto",
-              color: palette.faint,
-              fontSize: "11px",
-              fontWeight: 500,
-            }}
-          >
-            Prepared {action.time}
-          </div>
-        </div>
-      </article>
-    );
   };
 
   const renderSkeletonCard = (key) => (
@@ -705,7 +948,14 @@ function App() {
             ) : hasVisibleFeedItems ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 {renderGeneratorCard()}
-                {actions.map((action) => renderActionCard(action))}
+                {sortedActions.map((action) => (
+                  <ActionCard
+                    key={action.id}
+                    action={action}
+                    onApprove={approveAction}
+                    onDismiss={dismissAction}
+                  />
+                ))}
               </div>
             ) : (
               <div

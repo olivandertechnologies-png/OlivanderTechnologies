@@ -1,5 +1,12 @@
 import React, { useEffect } from "react";
-import { PROFILE_FIELD_LIMITS } from "./security.js";
+import {
+  CLIENT_COUNT_OPTIONS,
+  FOLLOW_UP_DELAY_OPTIONS,
+  FOLLOW_UP_INVOICE_DELAY_OPTIONS,
+  PROFILE_FIELD_LIMITS,
+  TONE_OPTIONS,
+  TURNAROUND_OPTIONS,
+} from "./security.js";
 
 const palette = {
   overlay: "rgba(0,0,0,0.5)",
@@ -257,6 +264,48 @@ function SettingsPanel({
                 />
               </label>
               <label>
+                <div style={labelStyle}>Typical client type</div>
+                <input
+                  value={profile.clientType}
+                  onChange={(event) =>
+                    onFieldChange("profile", "clientType", event.target.value)
+                  }
+                  maxLength={PROFILE_FIELD_LIMITS.clientType}
+                  style={fieldStyle}
+                  disabled={isDisabled}
+                />
+              </label>
+              <label>
+                <div style={labelStyle}>Average active clients</div>
+                <select
+                  value={profile.clientCount}
+                  onChange={(event) =>
+                    onFieldChange("profile", "clientCount", event.target.value)
+                  }
+                  style={fieldStyle}
+                  disabled={isDisabled}
+                >
+                  <option value="">Select an option</option>
+                  {CLIENT_COUNT_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <div style={labelStyle}>How clients find you</div>
+                <input
+                  value={profile.clientSource}
+                  onChange={(event) =>
+                    onFieldChange("profile", "clientSource", event.target.value)
+                  }
+                  maxLength={PROFILE_FIELD_LIMITS.clientSource}
+                  style={fieldStyle}
+                  disabled={isDisabled}
+                />
+              </label>
+              <label>
                 <div style={labelStyle}>Email sign-off</div>
                 <input
                   value={profile.signoff}
@@ -269,16 +318,34 @@ function SettingsPanel({
                 />
               </label>
               <label>
-                <div style={labelStyle}>Standard quote turnaround</div>
+                <div style={labelStyle}>Anything you never say in emails</div>
                 <input
+                  value={profile.emailNeverSay}
+                  onChange={(event) =>
+                    onFieldChange("profile", "emailNeverSay", event.target.value)
+                  }
+                  maxLength={PROFILE_FIELD_LIMITS.emailNeverSay}
+                  style={fieldStyle}
+                  disabled={isDisabled}
+                />
+              </label>
+              <label>
+                <div style={labelStyle}>Standard quote turnaround</div>
+                <select
                   value={profile.turnaround}
                   onChange={(event) =>
                     onFieldChange("profile", "turnaround", event.target.value)
                   }
-                  maxLength={PROFILE_FIELD_LIMITS.turnaround}
                   style={fieldStyle}
                   disabled={isDisabled}
-                />
+                >
+                  <option value="">Select an option</option>
+                  {TURNAROUND_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
           </section>
@@ -310,13 +377,16 @@ function SettingsPanel({
                   style={fieldStyle}
                   disabled={isDisabled}
                 >
-                  <option>Professional</option>
-                  <option>Friendly</option>
-                  <option>Direct</option>
+                  <option value="">Select tone</option>
+                  {TONE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label>
-                <div style={labelStyle}>Follow-up delay</div>
+                <div style={labelStyle}>Quote follow-up delay</div>
                 <select
                   value={behaviour.followUpDelay}
                   onChange={(event) =>
@@ -325,9 +395,34 @@ function SettingsPanel({
                   style={fieldStyle}
                   disabled={isDisabled}
                 >
-                  <option>After 2 days</option>
-                  <option>After 3 days</option>
-                  <option>After 5 days</option>
+                  <option value="">Select an option</option>
+                  {FOLLOW_UP_DELAY_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <div style={labelStyle}>Invoice chase delay</div>
+                <select
+                  value={behaviour.followUpInvoiceDelay}
+                  onChange={(event) =>
+                    onFieldChange(
+                      "behaviour",
+                      "followUpInvoiceDelay",
+                      event.target.value,
+                    )
+                  }
+                  style={fieldStyle}
+                  disabled={isDisabled}
+                >
+                  <option value="">Select an option</option>
+                  {FOLLOW_UP_INVOICE_DELAY_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -340,9 +435,9 @@ function SettingsPanel({
                 }}
               >
                 <div>
-                  <div style={labelStyle}>Auto-dismiss low priority</div>
+                  <div style={labelStyle}>Weekly digest</div>
                   <div style={{ color: palette.muted, fontSize: "13px" }}>
-                    Skip routine prompts unless they need you.
+                    Receive a summary every Monday morning.
                   </div>
                 </div>
 
@@ -352,8 +447,8 @@ function SettingsPanel({
                   onClick={() =>
                     onFieldChange(
                       "behaviour",
-                      "autoDismissLowPriority",
-                      !behaviour.autoDismissLowPriority,
+                      "weeklyDigestEnabled",
+                      !behaviour.weeklyDigestEnabled,
                     )
                   }
                   style={{
@@ -361,7 +456,7 @@ function SettingsPanel({
                     height: "26px",
                     border: "none",
                     borderRadius: "999px",
-                    backgroundColor: behaviour.autoDismissLowPriority
+                    backgroundColor: behaviour.weeklyDigestEnabled
                       ? palette.blue
                       : "rgba(255,255,255,0.12)",
                     position: "relative",
@@ -374,7 +469,7 @@ function SettingsPanel({
                     style={{
                       position: "absolute",
                       top: "3px",
-                      left: behaviour.autoDismissLowPriority ? "23px" : "3px",
+                      left: behaviour.weeklyDigestEnabled ? "23px" : "3px",
                       width: "20px",
                       height: "20px",
                       borderRadius: "999px",

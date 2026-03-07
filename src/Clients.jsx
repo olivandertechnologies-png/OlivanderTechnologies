@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchClients, generateAction } from "./dataLayer.js";
+import { fetchClients, generateAction, generateClientSummary } from "./dataLayer.js";
 import { loadDocumentAssets } from "./documentAssets.js";
 import { useAuth } from "./hooks/useAuth.js";
 import { ACTION_PROMPT_MAX_LENGTH, sanitizePromptInput } from "./security.js";
@@ -25,6 +25,7 @@ const palette = {
 };
 
 const filterTabs = ["All", "Active", "Needs attention"];
+const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 function statusStyles(status) {
   switch (status) {
@@ -42,6 +43,19 @@ function statusStyles(status) {
 
 function needsAttention(status) {
   return status === "Needs follow-up" || status === "Overdue" || status === "New lead";
+}
+
+function isSummaryFresh(value) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return Date.now() - date.getTime() < ONE_DAY_IN_MS;
 }
 
 function ClientsShellMessage({ message }) {
@@ -62,6 +76,25 @@ function ClientsShellMessage({ message }) {
   );
 }
 
+function SummarySkeleton() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "12px" }}>
+      {[100, 92, 78].map((width) => (
+        <div
+          key={width}
+          style={{
+            width: `${width}%`,
+            height: "12px",
+            borderRadius: "999px",
+            backgroundColor: "rgba(255,255,255,0.08)",
+            animation: "olivander-shimmer 1.4s ease-in-out infinite",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function Clients() {
   const { user, loading } = useAuth();
   const [clients, setClients] = useState([]);
@@ -71,10 +104,23 @@ function Clients() {
   const [expandedId, setExpandedId] = useState(null);
   const [prompts, setPrompts] = useState({});
   const [requestStateById, setRequestStateById] = useState({});
+  const [summaryRequestStateById, setSummaryRequestStateById] = useState({});
 
   useEffect(() => {
     loadDocumentAssets({
       fonts: ["dmSans", "jetbrainsMono"],
+      styles: [
+        {
+          id: "olivander-clients-motion",
+          css: `
+        @keyframes olivander-shimmer {
+          0% { opacity: 0.4; }
+          50% { opacity: 0.8; }
+          100% { opacity: 0.4; }
+        }
+      `,
+        },
+      ],
     });
   }, []);
 
@@ -126,8 +172,28 @@ function Clients() {
     return clients;
   }, [activeFilter, clients]);
 
+  const mergeClientSummary = (clientId, summaryPayload) => {
+    setClients((current) =>
+      current.map((client) =>
+        client.id === clientId
+          ? {
+              ...client,
+              summary: summaryPayload.summary,
+              summaryGeneratedAt: summaryPayload.summaryGeneratedAt,
+            }
+          : client,
+      ),
+    );
+  };
+
   const toggleExpanded = (clientId) => {
+    const isExpanding = expandedId !== clientId;
+    const client = clients.find((item) => item.id === clientId);
     setExpandedId((current) => (current === clientId ? null : clientId));
+
+    if (isExpanding && client) {
+      void loadClientSummary(client);
+    }
   };
 
   const setPrompt = (clientId, value) => {
@@ -136,6 +202,53 @@ function Clients() {
 
   const setRequestState = (clientId, next) => {
     setRequestStateById((current) => ({ ...current, [clientId]: next }));
+  };
+
+  const setSummaryRequestState = (clientId, next) => {
+    setSummaryRequestStateById((current) => ({ ...current, [clientId]: next }));
+  };
+
+  const loadClientSummary = async (client, options = {}) => {
+    const force = options.force === true;
+    const requestState = summaryRequestStateById[client.id];
+
+    if (
+      requestState?.status === "loading" ||
+      requestState?.status === "refreshing" ||
+      !user
+    ) {
+      return;
+    }
+
+    const hasSummary = Boolean(client.summary);
+    const summaryIsFresh = isSummaryFresh(client.summaryGeneratedAt);
+
+    if (!force && hasSummary && summaryIsFresh) {
+      return;
+    }
+
+    setSummaryRequestState(client.id, {
+      status: hasSummary ? "refreshing" : "loading",
+    });
+
+    try {
+      const nextSummary = await generateClientSummary(client.id, { force });
+      mergeClientSummary(client.id, nextSummary);
+      setSummaryRequestState(client.id, { status: "idle" });
+    } catch (error) {
+      console.error("Failed to generate client summary", error);
+      const message =
+        error?.code === "missing-api-url"
+          ? "The summary couldn't be generated. Add VITE_API_URL to .env and restart the app."
+          : error?.message || "Something went wrong. Try refreshing.";
+      setSummaryRequestState(client.id, { status: "error", message });
+    }
+  };
+
+  const handleRegenerateSummary = async (event, client) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await loadClientSummary(client, { force: true });
   };
 
   const handleGenerateAction = async (event, client) => {
@@ -289,6 +402,12 @@ function Clients() {
               const expanded = expandedId === client.id;
               const statusStyle = statusStyles(client.status);
               const requestState = requestStateById[client.id] || { status: "idle" };
+              const summaryRequestState = summaryRequestStateById[client.id] || {
+                status: "idle",
+              };
+              const showSummarySkeleton =
+                summaryRequestState.status === "loading" && !client.summary;
+              const isSummaryRefreshing = summaryRequestState.status === "refreshing";
 
               return (
                 <article
@@ -370,7 +489,7 @@ function Clients() {
 
                   <div
                     style={{
-                      maxHeight: expanded ? "400px" : "0",
+                      maxHeight: expanded ? "960px" : "0",
                       overflow: "hidden",
                       transition: "max-height 400ms cubic-bezier(0.4, 0, 0.2, 1)",
                     }}
@@ -384,6 +503,118 @@ function Clients() {
                         borderTop: `1px solid ${palette.border}`,
                       }}
                     >
+                      <div
+                        style={{
+                          marginBottom: "20px",
+                          padding: "18px",
+                          borderRadius: "10px",
+                          backgroundColor: palette.inset,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "12px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              color: palette.muted,
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Relationship summary
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={
+                              summaryRequestState.status === "loading" ||
+                              summaryRequestState.status === "refreshing"
+                            }
+                            onClick={(event) => {
+                              void handleRegenerateSummary(event, client);
+                            }}
+                            style={{
+                              border: "none",
+                              backgroundColor: "transparent",
+                              color: palette.blue,
+                              padding: 0,
+                              fontSize: "13px",
+                              fontWeight: 500,
+                              fontFamily: "'DM Sans', sans-serif",
+                              cursor:
+                                summaryRequestState.status === "loading" ||
+                                summaryRequestState.status === "refreshing"
+                                  ? "default"
+                                  : "pointer",
+                              opacity:
+                                summaryRequestState.status === "loading" ||
+                                summaryRequestState.status === "refreshing"
+                                  ? 0.7
+                                  : 1,
+                            }}
+                          >
+                            {isSummaryRefreshing ? "Refreshing..." : "Regenerate"}
+                          </button>
+                        </div>
+
+                        {showSummarySkeleton ? (
+                          <SummarySkeleton />
+                        ) : client.summary ? (
+                          <div
+                            style={{
+                              marginTop: "12px",
+                              color: palette.muted,
+                              fontSize: "14px",
+                              lineHeight: 1.7,
+                            }}
+                          >
+                            {client.summary}
+                          </div>
+                        ) : summaryRequestState.status === "error" ? (
+                          <div
+                            style={{
+                              marginTop: "12px",
+                              color: palette.muted,
+                              fontSize: "13px",
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            {summaryRequestState.message}
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              marginTop: "12px",
+                              color: palette.muted,
+                              fontSize: "13px",
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            Generating a relationship summary...
+                          </div>
+                        )}
+
+                        {summaryRequestState.status === "error" && client.summary ? (
+                          <div
+                            style={{
+                              marginTop: "10px",
+                              color: palette.faint,
+                              fontSize: "12px",
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {summaryRequestState.message}
+                          </div>
+                        ) : null}
+                      </div>
+
                       <div
                         style={{
                           display: "grid",

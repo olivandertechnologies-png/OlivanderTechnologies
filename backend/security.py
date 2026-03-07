@@ -19,6 +19,15 @@ CONTEXT_KEY_PATTERN = r"^[a-z0-9_.:-]{1,40}$"
 MAX_ACTION_REASONING_LENGTH = 240
 MAX_ACTION_LABEL_LENGTH = 120
 MAX_ACTION_DRAFT_LENGTH = 4000
+MAX_ACTION_CONFIDENCE_REASON_LENGTH = 240
+MAX_DIGEST_THIS_WEEK_LENGTH = 400
+MIN_ACTION_PRIORITY_SCORE = 1
+MAX_ACTION_PRIORITY_SCORE = 10
+MAX_CLIENT_SUMMARY_LENGTH = 400
+MIN_ACTION_STEPS = 4
+MAX_ACTION_STEPS = 6
+MAX_ACTION_STEP_LENGTH = 160
+MAX_OAUTH_TOKEN_LENGTH = 4096
 MAX_SITUATION_LENGTH = 2000
 MAX_CONTEXT_VALUE_LENGTH = 400
 MAX_CONTEXT_ITEMS = 12
@@ -175,6 +184,26 @@ class AuthenticatedUser(StrictModel):
         return cleaned
 
 
+class GoogleSessionSyncRequest(StrictModel):
+    provider_refresh_token: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_OAUTH_TOKEN_LENGTH,
+    )
+
+    @field_validator("provider_refresh_token")
+    @classmethod
+    def validate_provider_refresh_token(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        return sanitize_text(
+            value,
+            field_name="provider_refresh_token",
+            max_length=MAX_OAUTH_TOKEN_LENGTH,
+        )
+
+
 @dataclass(frozen=True)
 class RateLimitRule:
     scope: str
@@ -228,6 +257,18 @@ RATE_LIMITS: dict[str, tuple[RateLimitRule, ...]] = {
     "actions_mutation": (
         RateLimitRule(scope="ip", limit=40, window_seconds=60),
         RateLimitRule(scope="user", limit=20, window_seconds=60),
+    ),
+    "client_summary": (
+        RateLimitRule(scope="ip", limit=20, window_seconds=60),
+        RateLimitRule(scope="user", limit=10, window_seconds=60),
+    ),
+    "provider_session_sync": (
+        RateLimitRule(scope="ip", limit=60, window_seconds=60),
+        RateLimitRule(scope="user", limit=20, window_seconds=60),
+    ),
+    "digest_send": (
+        RateLimitRule(scope="ip", limit=12, window_seconds=60),
+        RateLimitRule(scope="user", limit=4, window_seconds=3600),
     ),
 }
 
