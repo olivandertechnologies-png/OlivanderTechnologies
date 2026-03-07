@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  completeOnboarding,
-  fetchUserProfile,
-  saveUserProfile,
+  completeOnboardingProfile,
+  fetchOnboardingProfile,
+  saveOnboardingProfile,
 } from "./dataLayer.js";
 import { loadDocumentAssets } from "./documentAssets.js";
 import { useAuth } from "./hooks/useAuth.js";
@@ -55,7 +55,7 @@ const fieldStyle = {
   borderRadius: "10px",
   backgroundColor: palette.page,
   color: palette.text,
-  fontSize: "14px",
+  fontSize: "15px",
   fontFamily: "'DM Sans', sans-serif",
   boxSizing: "border-box",
   outline: "none",
@@ -243,7 +243,7 @@ function Onboarding() {
       setLoadError("");
 
       try {
-        const nextSettings = await fetchUserProfile(user);
+        const nextSettings = await fetchOnboardingProfile(user);
         if (!isMounted) {
           return;
         }
@@ -294,7 +294,7 @@ function Onboarding() {
     setSubmitError("");
 
     try {
-      const nextSettings = await saveUserProfile(user, settings);
+      const nextSettings = await saveOnboardingProfile(user, settings);
       const resumeStep = getResumeStep(nextSettings);
 
       setSettings(nextSettings);
@@ -316,7 +316,7 @@ function Onboarding() {
     setSubmitError("");
 
     try {
-      const nextSettings = await completeOnboarding(user);
+      const nextSettings = await completeOnboardingProfile(user);
       setSettings(nextSettings);
       navigate("/dashboard", { replace: true });
     } catch (error) {
@@ -409,8 +409,9 @@ function Onboarding() {
             <div
               style={{
                 marginTop: "12px",
-                color: palette.muted,
+                color: "rgba(255,255,255,0.4)",
                 fontSize: "13px",
+                fontFamily: "'DM Sans', sans-serif",
               }}
             >
               Step {currentStep} of {TOTAL_STEPS}

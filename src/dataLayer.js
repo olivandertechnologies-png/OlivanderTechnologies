@@ -378,7 +378,6 @@ export async function ensureUserBootstrap(user) {
           follow_up_delay: null,
           followup_invoice_delay: null,
           weekly_digest_enabled: true,
-          calendar_connected: null,
           onboarding_complete: false,
         });
 
