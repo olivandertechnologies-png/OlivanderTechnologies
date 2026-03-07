@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import {
   ensureUserBootstrap,
-  syncGoogleProviderSession,
 } from "./dataLayer.js";
 import { navigate } from "./router.js";
 import { supabase } from "./supabase.js";
@@ -62,12 +61,6 @@ function AuthCallback() {
         const session = sessionResult;
         if (session?.user) {
           await ensureUserBootstrap(session.user);
-
-          try {
-            await syncGoogleProviderSession(session);
-          } catch (error) {
-            console.error("Failed to sync Google provider session", error);
-          }
 
           if (!isMounted) {
             return;

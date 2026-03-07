@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   ensureUserBootstrap,
   fetchOnboardingStatus,
-  syncGoogleProviderSession,
 } from "../dataLayer.js";
 import { navigate } from "../router.js";
 import { supabase } from "../supabase.js";
@@ -35,12 +34,6 @@ export function useAuth() {
         await ensureUserBootstrap(nextUser);
       } catch (error) {
         console.error("Failed to bootstrap Supabase user", error);
-      }
-
-      try {
-        await syncGoogleProviderSession(session);
-      } catch (error) {
-        console.error("Failed to sync Google provider session", error);
       }
 
       try {

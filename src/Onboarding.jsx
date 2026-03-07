@@ -12,6 +12,8 @@ import {
   DEFAULT_PROFILE,
   FOLLOW_UP_DELAY_OPTIONS,
   FOLLOW_UP_INVOICE_DELAY_OPTIONS,
+  getOnboardingProfileFieldKey,
+  ONBOARDING_PROFILE_FIELD_LIMITS,
   PROFILE_FIELD_LIMITS,
   sanitizeSettingsFieldValue,
   TONE_OPTIONS,
@@ -65,11 +67,16 @@ function isFilled(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function getOnboardingProfileValue(settings, field) {
+  const mappedField = getOnboardingProfileFieldKey(field);
+  return settings.profile[mappedField] ?? "";
+}
+
 function isStepOneComplete(settings) {
   return (
     isFilled(settings.profile.name) &&
     isFilled(settings.profile.businessName) &&
-    isFilled(settings.profile.work)
+    isFilled(getOnboardingProfileValue(settings, "what_you_do"))
   );
 }
 
@@ -84,13 +91,13 @@ function isStepTwoComplete(settings) {
 function isStepThreeComplete(settings) {
   return (
     isFilled(settings.behaviour.tone) &&
-    isFilled(settings.profile.signoff)
+    isFilled(getOnboardingProfileValue(settings, "email_signoff"))
   );
 }
 
 function isStepFourComplete(settings) {
   return (
-    isFilled(settings.profile.turnaround) &&
+    isFilled(getOnboardingProfileValue(settings, "quote_turnaround")) &&
     isFilled(settings.behaviour.followUpDelay) &&
     isFilled(settings.behaviour.followUpInvoiceDelay)
   );
@@ -285,6 +292,11 @@ function Onboarding() {
     }));
   };
 
+  const updateOnboardingProfileField = (field, value) => {
+    const mappedField = getOnboardingProfileFieldKey(field);
+    updateField("profile", mappedField, value);
+  };
+
   const handleNext = async () => {
     if (!user || !isCurrentStepComplete || isSavingStep || currentStep >= TOTAL_STEPS) {
       return;
@@ -459,11 +471,11 @@ function Onboarding() {
 
                 <Field label="What you do">
                   <input
-                    value={settings.profile.work}
+                    value={getOnboardingProfileValue(settings, "what_you_do")}
                     onChange={(event) =>
-                      updateField("profile", "work", event.target.value)
+                      updateOnboardingProfileField("what_you_do", event.target.value)
                     }
-                    maxLength={PROFILE_FIELD_LIMITS.work}
+                    maxLength={ONBOARDING_PROFILE_FIELD_LIMITS.what_you_do}
                     placeholder="e.g. Plumber, personal trainer, consultant"
                     style={fieldStyle}
                   />
@@ -566,11 +578,11 @@ function Onboarding() {
 
                 <Field label="Email sign-off">
                   <input
-                    value={settings.profile.signoff}
+                    value={getOnboardingProfileValue(settings, "email_signoff")}
                     onChange={(event) =>
-                      updateField("profile", "signoff", event.target.value)
+                      updateOnboardingProfileField("email_signoff", event.target.value)
                     }
-                    maxLength={PROFILE_FIELD_LIMITS.signoff}
+                    maxLength={ONBOARDING_PROFILE_FIELD_LIMITS.email_signoff}
                     placeholder="e.g. Cheers, James or Kind regards, Sarah"
                     style={fieldStyle}
                   />
@@ -596,9 +608,12 @@ function Onboarding() {
 
                 <Field label="Standard quote turnaround">
                   <select
-                    value={settings.profile.turnaround}
+                    value={getOnboardingProfileValue(settings, "quote_turnaround")}
                     onChange={(event) =>
-                      updateField("profile", "turnaround", event.target.value)
+                      updateOnboardingProfileField(
+                        "quote_turnaround",
+                        event.target.value,
+                      )
                     }
                     style={fieldStyle}
                   >

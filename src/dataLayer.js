@@ -233,9 +233,9 @@ function normalizeOnboardingRow(row, user) {
     profile: {
       name: row?.name || fallbackName,
       businessName: row?.business_name || "",
-      work: row?.work || "",
-      signoff: row?.signoff || "",
-      turnaround: row?.turnaround || "",
+      work: row?.what_you_do || "",
+      signoff: row?.email_signoff || "",
+      turnaround: row?.quote_turnaround || "",
       clientType: row?.client_type || "",
       clientCount: row?.client_count || "",
       clientSource: row?.client_source || "",
@@ -262,9 +262,9 @@ function buildOnboardingPayload(user, settings = DEFAULT_PROFILE) {
     email: user.email ?? null,
     name: sanitizedSettings.profile.name || getFullName(user) || null,
     business_name: sanitizedSettings.profile.businessName || null,
-    work: sanitizedSettings.profile.work || null,
-    signoff: sanitizedSettings.profile.signoff || null,
-    turnaround: sanitizedSettings.profile.turnaround || null,
+    what_you_do: sanitizedSettings.profile.work || null,
+    email_signoff: sanitizedSettings.profile.signoff || null,
+    quote_turnaround: sanitizedSettings.profile.turnaround || null,
     client_type: sanitizedSettings.profile.clientType || null,
     client_count: sanitizedSettings.profile.clientCount || null,
     client_source: sanitizedSettings.profile.clientSource || null,
@@ -367,9 +367,9 @@ export async function ensureUserBootstrap(user) {
           email: user.email ?? null,
           name: getFullName(user) || null,
           business_name: null,
-          work: null,
-          signoff: null,
-          turnaround: null,
+          what_you_do: null,
+          email_signoff: null,
+          quote_turnaround: null,
           client_type: null,
           client_count: null,
           client_source: null,
@@ -446,9 +446,9 @@ export async function fetchOnboardingProfile(user) {
         "id",
         "name",
         "business_name",
-        "work",
-        "signoff",
-        "turnaround",
+        "what_you_do",
+        "email_signoff",
+        "quote_turnaround",
         "client_type",
         "client_count",
         "client_source",
@@ -511,9 +511,9 @@ export async function saveOnboardingProfile(user, settings) {
         "id",
         "name",
         "business_name",
-        "work",
-        "signoff",
-        "turnaround",
+        "what_you_do",
+        "email_signoff",
+        "quote_turnaround",
         "client_type",
         "client_count",
         "client_source",
@@ -560,9 +560,9 @@ export async function completeOnboardingProfile(user) {
         "id",
         "name",
         "business_name",
-        "work",
-        "signoff",
-        "turnaround",
+        "what_you_do",
+        "email_signoff",
+        "quote_turnaround",
         "client_type",
         "client_count",
         "client_source",
@@ -727,41 +727,6 @@ export async function generateClientSummary(clientId, options = {}) {
   }
 
   return mapClientSummaryPayload(payload);
-}
-
-export async function syncGoogleProviderSession(session) {
-  const provider = session?.user?.app_metadata?.provider;
-  const refreshToken =
-    typeof session?.provider_refresh_token === "string"
-      ? session.provider_refresh_token.trim()
-      : "";
-  const accessToken =
-    typeof session?.access_token === "string" ? session.access_token.trim() : "";
-
-  if (provider !== "google" || !refreshToken || !accessToken) {
-    return { stored: false };
-  }
-
-  const apiBaseUrl = getApiBaseUrl();
-  const response = await fetch(`${apiBaseUrl}/integrations/google/session`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      provider_refresh_token: refreshToken,
-    }),
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    const error = new Error(payload?.detail || `Request failed with ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-
-  return payload ?? { stored: true };
 }
 
 export function buildAgentContext(settings) {

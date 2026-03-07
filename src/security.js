@@ -14,6 +14,16 @@ export const PROFILE_FIELD_LIMITS = Object.freeze({
   clientSource: 160,
   emailNeverSay: 160,
 });
+export const ONBOARDING_PROFILE_FIELD_MAP = Object.freeze({
+  what_you_do: "work",
+  email_signoff: "signoff",
+  quote_turnaround: "turnaround",
+});
+export const ONBOARDING_PROFILE_FIELD_LIMITS = Object.freeze({
+  what_you_do: PROFILE_FIELD_LIMITS.work,
+  email_signoff: PROFILE_FIELD_LIMITS.signoff,
+  quote_turnaround: PROFILE_FIELD_LIMITS.turnaround,
+});
 export const TONE_OPTIONS = Object.freeze(["Friendly", "Professional", "Direct"]);
 export const CLIENT_COUNT_OPTIONS = Object.freeze(["1-5", "6-15", "16-30", "30+"]);
 export const TURNAROUND_OPTIONS = Object.freeze([
@@ -167,6 +177,10 @@ export function sanitizePromptInput(value) {
     maxLength: ACTION_PROMPT_MAX_LENGTH,
     multiline: true,
   });
+}
+
+export function getOnboardingProfileFieldKey(field) {
+  return ONBOARDING_PROFILE_FIELD_MAP[field] ?? field;
 }
 
 export function sanitizeProfileFieldInput(field, value) {
