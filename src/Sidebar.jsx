@@ -403,7 +403,7 @@ function Sidebar({ user }) {
             <div
               style={{
                 marginTop: "12px",
-                color: palette.muted,
+                color: "#e05252",
                 fontSize: "11px",
                 lineHeight: 1.4,
               }}

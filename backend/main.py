@@ -519,17 +519,24 @@ async def process_new_email(
 
 
 def fetch_user_by_email(supabase: Client, email: str) -> dict[str, Any] | None:
-    logger.info("Supabase select users by email=%s", email)
+    logger.info("Supabase select Google credential by provider_email=%s", email)
     response = (
-        supabase.table("users")
-        .select("*")
-        .eq("email", email)
+        supabase.table("user_google_oauth_credentials")
+        .select("user_id")
+        .eq("provider_email", email)
         .limit(1)
         .execute()
     )
     rows = response.data or []
-    logger.info("Supabase users lookup rows=%s", len(rows))
-    return rows[0] if rows else None
+    logger.info("Supabase Google credential lookup rows=%s", len(rows))
+    if not rows:
+        return None
+
+    user_id = rows[0].get("user_id")
+    if not isinstance(user_id, str) or not user_id.strip():
+        return None
+
+    return fetch_user_row(supabase, user_id)
 
 
 def fetch_user_row(supabase: Client, user_id: str) -> dict[str, Any] | None:
@@ -548,7 +555,6 @@ def ensure_public_user_row(
     supabase: Client,
     *,
     user_id: str,
-    email: str | None,
 ) -> dict[str, Any]:
     existing_user = fetch_user_row(supabase, user_id)
     if existing_user:
@@ -556,7 +562,7 @@ def ensure_public_user_row(
 
     payload = {
         "id": user_id,
-        "email": email,
+        "onboarding_complete": False,
     }
     response = supabase.table("users").insert(payload).execute()
     rows = response.data or []
@@ -633,7 +639,7 @@ def fetch_google_oauth_credentials(supabase: Client, user_id: str) -> dict[str, 
 def fetch_weekly_digest_enabled_users(supabase: Client) -> list[dict[str, Any]]:
     response = (
         supabase.table("users")
-        .select("id, email, name, business_name, weekly_digest_enabled")
+        .select("id, name, business_name, weekly_digest_enabled")
         .eq("weekly_digest_enabled", True)
         .execute()
     )
@@ -1109,12 +1115,14 @@ async def send_weekly_digest_for_user(
     if not isinstance(user_id, str) or not user_id.strip():
         raise HTTPException(status_code=500, detail="User record is invalid.")
 
-    recipient_email = user_row.get("email")
-    if not isinstance(recipient_email, str) or not recipient_email.strip():
-        raise HTTPException(status_code=400, detail="User email is unavailable for the weekly digest.")
-
     credentials_row = fetch_google_oauth_credentials(supabase, user_id)
+    recipient_email = credentials_row.get("provider_email") if credentials_row else None
     refresh_token = credentials_row.get("refresh_token") if credentials_row else None
+    if not isinstance(recipient_email, str) or not recipient_email.strip():
+        raise HTTPException(
+            status_code=409,
+            detail="Google sending email is unavailable. Please sign in with Google again.",
+        )
     if not isinstance(refresh_token, str) or not refresh_token.strip():
         raise HTTPException(
             status_code=409,
@@ -1367,7 +1375,6 @@ async def sync_google_session(
     ensure_public_user_row(
         supabase,
         user_id=current_user.id,
-        email=current_user.email,
     )
     stored_row = store_google_refresh_token(
         supabase,
@@ -1447,7 +1454,6 @@ async def send_weekly_digest(request: Request) -> dict[str, Any]:
     user_row = ensure_public_user_row(
         supabase,
         user_id=current_user.id,
-        email=current_user.email,
     )
     result = await send_weekly_digest_for_user(
         supabase,

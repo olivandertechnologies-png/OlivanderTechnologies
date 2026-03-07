@@ -159,21 +159,28 @@ function getFullName(user) {
 
 function buildUserPayload(user, settings = DEFAULT_PROFILE) {
   const sanitizedSettings = sanitizeSettingsInput(settings);
+  const followUpDelay = sanitizedSettings.behaviour.followUpDelay || null;
+  const work = sanitizedSettings.profile.work || null;
+  const signoff = sanitizedSettings.profile.signoff || null;
+  const turnaround = sanitizedSettings.profile.turnaround || null;
 
   return {
     id: sanitizeUuid(user.id, "User ID"),
-    email: user.email ?? null,
     name: sanitizedSettings.profile.name || getFullName(user) || null,
     business_name: sanitizedSettings.profile.businessName || null,
-    work: sanitizedSettings.profile.work || null,
-    signoff: sanitizedSettings.profile.signoff || null,
-    turnaround: sanitizedSettings.profile.turnaround || null,
+    work,
+    signoff,
+    turnaround,
+    what_you_do: work,
+    email_signoff: signoff,
+    quote_turnaround: turnaround,
     client_type: sanitizedSettings.profile.clientType || null,
     client_count: sanitizedSettings.profile.clientCount || null,
     client_source: sanitizedSettings.profile.clientSource || null,
     email_never_say: sanitizedSettings.profile.emailNeverSay || null,
     tone: sanitizedSettings.behaviour.tone || null,
-    follow_up_delay: sanitizedSettings.behaviour.followUpDelay || null,
+    follow_up_delay: followUpDelay,
+    followup_delay: followUpDelay,
     followup_invoice_delay:
       sanitizedSettings.behaviour.followUpInvoiceDelay || null,
     weekly_digest_enabled:
@@ -199,9 +206,9 @@ function normalizeProfileRow(row, user) {
     profile: {
       name: row?.name || fallbackName,
       businessName: row?.business_name || "",
-      work: row?.work || "",
-      signoff: row?.signoff || "",
-      turnaround: row?.turnaround || "",
+      work: row?.work || row?.what_you_do || "",
+      signoff: row?.signoff || row?.email_signoff || "",
+      turnaround: row?.turnaround || row?.quote_turnaround || "",
       clientType: row?.client_type || "",
       clientCount: row?.client_count || "",
       clientSource: row?.client_source || "",
@@ -210,7 +217,9 @@ function normalizeProfileRow(row, user) {
     behaviour: {
       tone: row?.tone || DEFAULT_PROFILE.behaviour.tone,
       followUpDelay:
-        row?.follow_up_delay || DEFAULT_PROFILE.behaviour.followUpDelay,
+        row?.follow_up_delay ||
+        row?.followup_delay ||
+        DEFAULT_PROFILE.behaviour.followUpDelay,
       followUpInvoiceDelay:
         row?.followup_invoice_delay ||
         DEFAULT_PROFILE.behaviour.followUpInvoiceDelay,
@@ -233,9 +242,9 @@ function normalizeOnboardingRow(row, user) {
     profile: {
       name: row?.name || fallbackName,
       businessName: row?.business_name || "",
-      work: row?.what_you_do || "",
-      signoff: row?.email_signoff || "",
-      turnaround: row?.quote_turnaround || "",
+      work: row?.what_you_do || row?.work || "",
+      signoff: row?.email_signoff || row?.signoff || "",
+      turnaround: row?.quote_turnaround || row?.turnaround || "",
       clientType: row?.client_type || "",
       clientCount: row?.client_count || "",
       clientSource: row?.client_source || "",
@@ -244,7 +253,9 @@ function normalizeOnboardingRow(row, user) {
     behaviour: {
       tone: row?.tone || DEFAULT_PROFILE.behaviour.tone,
       followUpDelay:
-        row?.follow_up_delay || DEFAULT_PROFILE.behaviour.followUpDelay,
+        row?.follow_up_delay ||
+        row?.followup_delay ||
+        DEFAULT_PROFILE.behaviour.followUpDelay,
       followUpInvoiceDelay:
         row?.followup_invoice_delay ||
         DEFAULT_PROFILE.behaviour.followUpInvoiceDelay,
@@ -256,21 +267,28 @@ function normalizeOnboardingRow(row, user) {
 
 function buildOnboardingPayload(user, settings = DEFAULT_PROFILE) {
   const sanitizedSettings = sanitizeSettingsInput(settings);
+  const followUpDelay = sanitizedSettings.behaviour.followUpDelay || null;
+  const work = sanitizedSettings.profile.work || null;
+  const signoff = sanitizedSettings.profile.signoff || null;
+  const turnaround = sanitizedSettings.profile.turnaround || null;
 
   return {
     id: sanitizeUuid(user.id, "User ID"),
-    email: user.email ?? null,
     name: sanitizedSettings.profile.name || getFullName(user) || null,
     business_name: sanitizedSettings.profile.businessName || null,
-    what_you_do: sanitizedSettings.profile.work || null,
-    email_signoff: sanitizedSettings.profile.signoff || null,
-    quote_turnaround: sanitizedSettings.profile.turnaround || null,
+    work,
+    signoff,
+    turnaround,
+    what_you_do: work,
+    email_signoff: signoff,
+    quote_turnaround: turnaround,
     client_type: sanitizedSettings.profile.clientType || null,
     client_count: sanitizedSettings.profile.clientCount || null,
     client_source: sanitizedSettings.profile.clientSource || null,
     email_never_say: sanitizedSettings.profile.emailNeverSay || null,
     tone: sanitizedSettings.behaviour.tone || null,
-    follow_up_delay: sanitizedSettings.behaviour.followUpDelay || null,
+    follow_up_delay: followUpDelay,
+    followup_delay: followUpDelay,
     followup_invoice_delay:
       sanitizedSettings.behaviour.followUpInvoiceDelay || null,
     onboarding_complete:
@@ -364,9 +382,11 @@ export async function ensureUserBootstrap(user) {
         .from("users")
         .insert({
           id: userId,
-          email: user.email ?? null,
           name: getFullName(user) || null,
           business_name: null,
+          work: null,
+          signoff: null,
+          turnaround: null,
           what_you_do: null,
           email_signoff: null,
           quote_turnaround: null,
@@ -376,6 +396,7 @@ export async function ensureUserBootstrap(user) {
           email_never_say: null,
           tone: null,
           follow_up_delay: null,
+          followup_delay: null,
           followup_invoice_delay: null,
           weekly_digest_enabled: true,
           onboarding_complete: false,
@@ -446,6 +467,9 @@ export async function fetchOnboardingProfile(user) {
         "id",
         "name",
         "business_name",
+        "work",
+        "signoff",
+        "turnaround",
         "what_you_do",
         "email_signoff",
         "quote_turnaround",
@@ -455,6 +479,7 @@ export async function fetchOnboardingProfile(user) {
         "email_never_say",
         "tone",
         "follow_up_delay",
+        "followup_delay",
         "followup_invoice_delay",
         "onboarding_complete",
       ].join(","),
@@ -511,6 +536,9 @@ export async function saveOnboardingProfile(user, settings) {
         "id",
         "name",
         "business_name",
+        "work",
+        "signoff",
+        "turnaround",
         "what_you_do",
         "email_signoff",
         "quote_turnaround",
@@ -520,6 +548,7 @@ export async function saveOnboardingProfile(user, settings) {
         "email_never_say",
         "tone",
         "follow_up_delay",
+        "followup_delay",
         "followup_invoice_delay",
         "onboarding_complete",
       ].join(","),
@@ -560,6 +589,9 @@ export async function completeOnboardingProfile(user) {
         "id",
         "name",
         "business_name",
+        "work",
+        "signoff",
+        "turnaround",
         "what_you_do",
         "email_signoff",
         "quote_turnaround",
@@ -569,6 +601,7 @@ export async function completeOnboardingProfile(user) {
         "email_never_say",
         "tone",
         "follow_up_delay",
+        "followup_delay",
         "followup_invoice_delay",
         "onboarding_complete",
       ].join(","),

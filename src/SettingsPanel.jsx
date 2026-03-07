@@ -203,7 +203,7 @@ function SettingsPanel({
             <div
               style={{
                 marginBottom: "18px",
-                color: palette.muted,
+                color: palette.red,
                 fontSize: "13px",
                 lineHeight: 1.6,
               }}

@@ -678,11 +678,7 @@ function Onboarding() {
             {submitError ? (
               <div
                 style={{
-                  padding: "14px 16px",
-                  border: `1px solid ${palette.faintStrong}`,
-                  borderRadius: "10px",
-                  backgroundColor: "rgba(255,255,255,0.04)",
-                  color: palette.muted,
+                  color: "#e05252",
                   fontSize: "13px",
                   lineHeight: 1.6,
                 }}

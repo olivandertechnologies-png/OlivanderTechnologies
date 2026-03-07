@@ -378,7 +378,7 @@ function Clients() {
           <div
             style={{
               marginBottom: "18px",
-              color: palette.muted,
+              color: "#e05252",
               fontSize: "13px",
               lineHeight: 1.6,
             }}
@@ -581,7 +581,7 @@ function Clients() {
                           <div
                             style={{
                               marginTop: "12px",
-                              color: palette.muted,
+                              color: "#e05252",
                               fontSize: "13px",
                               lineHeight: 1.6,
                             }}
@@ -605,7 +605,7 @@ function Clients() {
                           <div
                             style={{
                               marginTop: "10px",
-                              color: palette.faint,
+                              color: "#e05252",
                               fontSize: "12px",
                               lineHeight: 1.5,
                             }}
@@ -794,7 +794,7 @@ function Clients() {
                           <div
                             style={{
                               marginTop: "10px",
-                              color: palette.muted,
+                              color: "#e05252",
                               fontSize: "13px",
                               lineHeight: 1.6,
                             }}

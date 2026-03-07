@@ -417,7 +417,7 @@ function History() {
           <div
             style={{
               marginBottom: "18px",
-              color: palette.muted,
+              color: "#e05252",
               fontSize: "13px",
               lineHeight: 1.6,
             }}

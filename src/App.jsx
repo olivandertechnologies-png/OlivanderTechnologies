@@ -775,7 +775,7 @@ function App() {
       >
         <div
           style={{
-            color: palette.muted,
+            color: generatorCard.status === "error" ? "#e05252" : palette.muted,
             fontSize: "14px",
             lineHeight: 1.6,
           }}
@@ -933,7 +933,7 @@ function App() {
               <div
                 style={{
                   marginBottom: "14px",
-                  color: palette.muted,
+                  color: "#e05252",
                   fontSize: "13px",
                 }}
               >
@@ -1046,7 +1046,7 @@ function App() {
               {contextError ? (
                 <div
                   style={{
-                    color: palette.muted,
+                    color: "#e05252",
                     fontSize: "13px",
                     lineHeight: 1.55,
                   }}
@@ -1089,7 +1089,7 @@ function App() {
               ) : (
                 <div
                   style={{
-                    color: palette.muted,
+                    color: "#e05252",
                     fontSize: "13px",
                     lineHeight: 1.55,
                   }}

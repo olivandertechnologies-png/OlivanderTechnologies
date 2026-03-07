@@ -333,7 +333,7 @@ function Landing() {
         <div
           style={{
             padding: "12px 48px 0",
-            color: palette.muted,
+            color: "#e05252",
             fontSize: "13px",
             textAlign: "right",
           }}
