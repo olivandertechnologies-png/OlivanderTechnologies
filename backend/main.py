@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from supabase import Client, create_client
 
-from backend.security import (
+from security import (
     MAX_ACTION_PRIORITY_SCORE,
     MAX_ACTION_CONFIDENCE_REASON_LENGTH,
     MAX_ACTION_DRAFT_LENGTH,
